@@ -1,0 +1,16 @@
+# Sveglie del braccialetto LT716.
+# Una riga per giorno, seguita dagli orari (HH:MM) separati da spazi. Commenti con #.
+# Lo stesso orario in più giorni diventa una sola sveglia: massimo 8 orari diversi.
+# Applicare con: ./lt716 alarms   (un file senza orari cancella tutte le sveglie)
+#
+# Esempio:
+#   MON 07:00 13:30
+#   FRI 07:00
+
+MON
+TUE
+WED
+THU
+FRI
+SAT
+SUN

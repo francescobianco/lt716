@@ -1,0 +1,969 @@
+#!/usr/bin/env python3
+"""Control an LT716 smart band (FitPro protocol, Telink chip) over BLE via BlueZ D-Bus.
+
+Usage:
+  ./lt716 info                       name, MAC, firmware, feature string, battery
+  ./lt716 battery                    battery level (0x2A19)
+  ./lt716 settime                    set band clock to local time (12 01)
+  ./lt716 find                       "find band" vibration (12 0B)
+  ./lt716 notify [-t type] <text>    notification, up to 300 bytes UTF-8 (12 12)
+                                     types: sms qq wechat facebook twitter skype line
+                                     whatsapp (default) kakaotalk snapchat tiktok instagram
+                                     linkedin telegram okru vk tenchat viber messenger zalo
+  ./lt716 alerts on|off              enable/disable notifications for every app and calls
+                                     (12 07); when off the band ignores notify and call
+  ./lt716 call [-s seconds] <caller> incoming call, ended after N s (default 10) (12 11)
+  ./lt716 alarms [file]              program alarms from a weekly list (default alarms.txt)
+  ./lt716 alarms --show              print the alarms stored on the band (18)
+  ./lt716 camera on|off              remote shutter mode (12 0C); presses show in "live"
+  ./lt716 goal <steps>               daily step goal (12 03)
+  ./lt716 profile [key=value...]     user info (12 04): gender=male|female age= height=cm
+                                     weight=kg unit=km|mi; missing keys keep the band's value
+  ./lt716 lift on|off [HH-HH]        raise to wake, active window (12 09), default 08-22
+  ./lt716 dnd on|off [HH-HH]         do not disturb window (12 14), default 22-08
+  ./lt716 lang <code>                display language (12 15), e.g. it en de fr es
+  ./lt716 settings                   read and decode the band's settings (1A <key>)
+  ./lt716 steps                      today's totals: steps, distance, calories (15 0D)
+  ./lt716 measure hr|bp|spo2 [secs]  start a measurement and print the results (12 24),
+                                     default 60 s
+  ./lt716 live [seconds]             print events: steps, shutter, find phone, music keys,
+                                     stored records (default 60 s, 0 = until Ctrl+C)
+  ./lt716 ota <file.bin> [--dry-run|--yes]
+                                     firmware update over the Telink OTA service; without
+                                     --yes it only checks the image and builds the packets
+  ./lt716 ota --enter-updater        start an OTA without data: the stock firmware reboots
+                                     into the vendor updater (bank 0x20000) after ~40 s
+  ./lt716 dumper info|dump [file]|assets <src.bin>|updater|reboot
+                                     talk to the flash dumper (firmware/dumper) once it runs
+  ./lt716 reset --yes                factory reset (1D)
+  ./lt716 raw <hex> [<hex>...]       send raw packets to the UART and print the replies
+
+Env: MAC (default FF:FF:CF:10:70:E9), HCI (default hci0), RETRIES (default 5)
+Dependencies: python3-dbus, python3-gi. The band must already be paired.
+"""
+
+import datetime
+import hashlib
+import os
+import re
+import sys
+import time
+import zlib
+
+import dbus
+import dbus.mainloop.glib
+from gi.repository import GLib
+
+MAC = os.environ.get("MAC", "FF:FF:CF:10:70:E9")
+HCI = os.environ.get("HCI", "hci0")
+RETRIES = int(os.environ.get("RETRIES", "5"))
+DEV = f"/org/bluez/{HCI}/dev_{MAC.replace(':', '_')}"
+HERE = os.path.dirname(os.path.realpath(__file__))
+
+UART_TX = "6e400002-b5a3-f393-e0a9-e50e24dcca9d"  # write
+UART_RX = "6e400003-b5a3-f393-e0a9-e50e24dcca9d"  # notify
+CHUNK = 20  # the app always writes 20-byte pieces, the band reassembles by length
+
+CHAR = "org.bluez.GattCharacteristic1"
+PROPS = "org.freedesktop.DBus.Properties"
+
+# Notification type byte (first byte of the 12 12 payload), from NotifyService.sendNotifyPush
+NOTIFY_TYPES = {
+    "sms": 1, "qq": 2, "wechat": 3, "facebook": 4, "twitter": 5, "skype": 6, "line": 7,
+    "whatsapp": 8, "kakaotalk": 9, "snapchat": 10, "tiktok": 11, "instagram": 16,
+    "linkedin": 17, "telegram": 18, "okru": 19, "vk": 20, "tenchat": 21, "viber": 22,
+    "messenger": 23, "zalo": 24,
+}
+# Order of the per-app switches in 12 07 / 1A 04
+ALERT_NAMES = ("call", "sms", "wechat", "qq", "facebook", "twitter", "skype", "line",
+               "whatsapp", "kakaotalk", "instagram", "linkedin", "snapchat", "tiktok",
+               "telegram", "okru", "vk", "tenchat", "viber", "messenger", "zalo")
+
+# Language codes (12 15) from LanguageUtils.getLanguageCode
+LANGS = {
+    "zh": 0, "en": 1, "zh-tw": 2, "ar": 3, "cs": 4, "de": 5, "es": 6, "fr": 7, "ja": 8,
+    "ms": 9, "nl": 10, "pl": 11, "pt": 12, "ru": 13, "sk": 14, "th": 15, "tr": 16, "vi": 17,
+    "it": 18, "tl": 19, "id": 20, "uk": 21, "hi": 22, "fi": 23, "hr": 24, "nb": 25, "da": 26,
+    "sv": 27, "ko": 28, "hu": 29, "el": 30, "fa": 31, "ro": 32, "bg": 33, "sl": 34,
+    "liv": 35, "et": 36, "lt": 37, "sr": 38, "lv": 39, "he": 40,
+}
+
+# Feature string in 0x2A28, one character per flag (BaseLeService)
+FEATURES = ("ota", "battery", "heart", "blood", "spo2", "sleep", "-", "distance", "wxsport",
+            "voice", "default_open_call", "syncontacts", "temperature", "weather", "clock_dial",
+            "more_notify", "adv", "remote_camera", "find_device", "hr_el", "long_duration",
+            "dnd", "shake", "sos", "light_hand", "pay", "voice_play", "bind_ble_hid",
+            "he_suan", "alipay")
+
+DAYS = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")  # alarm bit 0 = Monday
+MEASURE = {"hr": 0, "bp": 1, "spo2": 2}
+
+
+def usage():
+    print(__doc__.split("\n", 2)[2].rstrip(), file=sys.stderr)
+    sys.exit(2)
+
+
+def die(msg, code=1):
+    sys.stdout.flush()
+    print(msg, file=sys.stderr)
+    sys.exit(code)
+
+
+# ---------------------------------------------------------------- packets
+
+def packet(group, cmd, data=None):
+    """CD <len u16 BE = total-3> <group> 01 <cmd> <datalen u16 BE> <data>"""
+    data = bytes(data or b"")
+    body = bytes([group, 1, cmd]) + len(data).to_bytes(2, "big") + data
+    return bytes([0xCD]) + len(body).to_bytes(2, "big") + body
+
+
+def switch(group, cmd, value):
+    return packet(group, cmd, [value])
+
+
+def window(on, start_h, end_h):
+    """<on> <start minutes u16 BE> <end minutes u16 BE>"""
+    return bytes([on]) + (start_h * 60).to_bytes(2, "big") + (end_h * 60).to_bytes(2, "big")
+
+
+def clock(t):
+    v = (t.second | t.minute << 6 | t.hour << 12 | t.day << 17 | t.month << 22
+         | (t.year - 2000) << 26)
+    return v.to_bytes(4, "big")
+
+
+def data_of(p):
+    return p[8:8 + int.from_bytes(p[6:8], "big")]
+
+
+# ---------------------------------------------------------------- BlueZ
+
+class Band:
+    def __init__(self):
+        dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+        self.bus = dbus.SystemBus()
+        self.loop = GLib.MainLoop()
+        self.handlers = []
+        self.buf = b""
+        self.listening = False
+        self.connect()
+        objs = dbus.Interface(self.bus.get_object("org.bluez", "/"),
+                              "org.freedesktop.DBus.ObjectManager").GetManagedObjects()
+        self.chars = {str(i[CHAR]["UUID"]): p for p, i in objs.items()
+                      if p.startswith(DEV + "/") and CHAR in i}
+
+    def prop(self, name):
+        try:
+            return self.bus.get_object("org.bluez", DEV).Get("org.bluez.Device1", name,
+                                                             dbus_interface=PROPS)
+        except dbus.DBusException:
+            return None
+
+    def connect(self):
+        if self.prop("ServicesResolved"):
+            return
+        if self.prop("Address") is None:
+            self.discover()
+        dev = dbus.Interface(self.bus.get_object("org.bluez", DEV), "org.bluez.Device1")
+        for r in range(1, RETRIES + 1):
+            try:
+                dev.Connect(timeout=30)
+            except dbus.DBusException:
+                pass
+            for _ in range(20):
+                if self.prop("ServicesResolved"):
+                    return
+                time.sleep(0.5)
+            print(f"attempt {r}/{RETRIES} failed, retrying...", file=sys.stderr)
+        die(f"giving up after {RETRIES} attempts")
+
+    def discover(self, secs=30):
+        """Scan until BlueZ has seen MAC (needed for the dumper, which is never paired)."""
+        ad = dbus.Interface(self.bus.get_object("org.bluez", f"/org/bluez/{HCI}"),
+                            "org.bluez.Adapter1")
+        print(f"scanning for {MAC}...", file=sys.stderr)
+        try:
+            ad.StartDiscovery()
+        except dbus.DBusException:
+            pass
+        try:
+            for _ in range(secs * 2):
+                if self.prop("Address") is not None:
+                    return
+                time.sleep(0.5)
+        finally:
+            try:
+                ad.StopDiscovery()
+            except dbus.DBusException:
+                pass
+        die(f"{MAC} not found: is it advertising?")
+
+    def char(self, uuid):
+        uuid = uuid.lower()
+        if len(uuid) == 4:
+            uuid = f"0000{uuid}-0000-1000-8000-00805f9b34fb"
+        if uuid not in self.chars:
+            die(f"characteristic {uuid} not found")
+        return dbus.Interface(self.bus.get_object("org.bluez", self.chars[uuid]), CHAR)
+
+    def read(self, uuid):
+        return bytes(self.char(uuid).ReadValue({}))
+
+    def write(self, pkt):
+        tx = self.char(UART_TX)
+        for i in range(0, len(pkt), CHUNK):
+            tx.WriteValue(dbus.Array(pkt[i:i + CHUNK], signature="y"), {"type": "request"})
+
+    def _changed(self, iface, props, invalidated):
+        if "Value" not in props:
+            return
+        v = bytes(props["Value"])
+        if v[0] == 0xDC and not self.buf:
+            self._dispatch(v)  # band ACK: DC 00 05 <group> <cmd> 00 <x> <01 = ok>
+            return
+        self.buf = v if v[0] == 0xCD else self.buf + v
+        if len(self.buf) < 3:
+            return
+        n = 3 + int.from_bytes(self.buf[1:3], "big")
+        if len(self.buf) < n:
+            return  # wait for the rest
+        pkt, self.buf = self.buf[:n], b""
+        # the app acknowledges every complete packet: DC 00 05 <group> 01 <total len u16> 01
+        self.write(bytes([0xDC, 0, 5, pkt[3], 1]) + n.to_bytes(2, "big") + b"\x01")
+        self._dispatch(pkt)
+
+    def _dispatch(self, pkt):
+        for h in self.handlers:
+            h(pkt)
+        sys.stdout.flush()
+
+    def listen(self, handler):
+        self.handlers.append(handler)
+        if not self.listening:
+            self.listening = True
+            self.bus.add_signal_receiver(self._changed, "PropertiesChanged", PROPS, "org.bluez",
+                                         self.chars[UART_RX])
+            self.char(UART_RX).StartNotify()
+
+    def run(self, secs, idle=False, until=None):
+        """Run the main loop for secs (0 = forever). With idle the timer restarts on each
+        packet; with until the loop ends as soon as until(packet) is true."""
+        timer = [None]
+
+        def fire():
+            timer[0] = None
+            self.loop.quit()
+            return False
+
+        def arm():
+            if timer[0]:
+                GLib.source_remove(timer[0])
+            timer[0] = GLib.timeout_add(int(secs * 1000), fire) if secs else None
+
+        def watch(p):
+            if idle:
+                arm()
+            if until and until(p):
+                self.loop.quit()
+
+        self.handlers.append(watch)
+        arm()
+        try:
+            self.loop.run()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.handlers.remove(watch)
+            if timer[0]:
+                GLib.source_remove(timer[0])
+
+    def send(self, *pkts, wait=1.5):
+        """Write packets and return the band's data replies (CD packets)."""
+        got = []
+        self.listen(lambda p: got.append(p) if p[0] == 0xCD else None)
+        for p in pkts:
+            self.write(p)
+        self.run(wait, idle=True)
+        return got
+
+    def cmd(self, *pkts):
+        """Write packets one at a time, each waiting for the band's ACK."""
+        acks = []
+        self.listen(lambda p: acks.append(p) if p[0] == 0xDC else None)
+        for p in pkts:
+            n = len(acks)
+            self.write(p)
+            self.run(3, until=lambda q: len(acks) > n)
+            if len(acks) == n:
+                die(f"no ACK from band for {p[:8].hex(' ')}")
+            if acks[-1][-1] != 1:
+                die(f"band rejected command: {acks[-1].hex(' ')}")
+
+
+# ---------------------------------------------------------------- decoding
+
+def hhmm(m):
+    return f"{m // 60:02d}:{m % 60:02d}"
+
+
+def secs_hms(s):
+    return f"{s // 3600:02d}:{s // 60 % 60:02d}:{s % 60:02d}"
+
+
+def decode_profile(v):
+    unit = {1: "km", 2: "mi"}.get(v & 0x1F, f"unit {v & 0x1F}")
+    return (f"{'male' if v >> 31 & 1 else 'female'}, age {v >> 24 & 0x7F}, "
+            f"height {v >> 15 & 0x1FF} cm, weight {v >> 5 & 0x3FF} kg, {unit}")
+
+
+def decode_setting(key, d):
+    if key == 1 and len(d) >= 4:
+        return "profile   " + decode_profile(int.from_bytes(d[:4], "big"))
+    if key == 2 and len(d) >= 4:
+        # written big-endian, but this firmware reports it as 00 + u24 little-endian
+        return f"goal      {int.from_bytes(d[1:4], 'little')} steps"
+    if key == 3 and len(d) >= 8:
+        days = "".join(c if d[7] >> (6 - i) & 1 else "-" for i, c in enumerate("MTWTFSS"))
+        return (f"longsit   {'on' if d[1] else 'off'}, siesta {'on' if d[0] else 'off'}, "
+                f"threshold {int.from_bytes(d[2:4], 'big')}, every {d[4]}, "
+                f"{d[5]:02d}-{d[6]:02d}h, days {days}")
+    if key == 4:
+        return "alerts    " + " ".join(
+            f"{ALERT_NAMES[i] if i < len(ALERT_NAMES) else i}={'on' if v else 'off'}"
+            for i, v in enumerate(d))
+    if key == 6 and len(d) >= 4:
+        n = ("vibration", "raise screen", "sleep", "heart rate")
+        return "switches  " + ", ".join(f"{n[i]} {'on' if d[i] else 'off'}" for i in range(4))
+    if key in (7, 9) and len(d) >= 5:
+        name = "lift     " if key == 7 else "dnd      "
+        return (f"{name} {'on' if d[0] else 'off'}, {hhmm(int.from_bytes(d[1:3], 'big'))}-"
+                f"{hhmm(int.from_bytes(d[3:5], 'big'))}")
+    return f"key {key:<6d} {d.hex(' ')}"
+
+
+def sport_date(p):
+    """Day of a 15 xx packet: u16 BE at byte 8, year-2000 bits 14-9, month 8-5, day 4-0."""
+    v = int.from_bytes(p[8:10], "big")
+    try:
+        return datetime.date(2000 + (v >> 9 & 0x3F), v >> 5 & 0xF, v & 0x1F)
+    except ValueError:
+        return None
+
+
+def records(p, size):
+    n = p[11] if len(p) > 11 else 0
+    return [p[12 + i * size:12 + (i + 1) * size] for i in range(n)
+            if len(p) >= 12 + (i + 1) * size]
+
+
+def sport_record(r):
+    v = int.from_bytes(r, "big")
+    slot = v >> 21 & 0x7FF
+    return (f"{hhmm(slot * 15)}  steps {v >> 52}  distance {v >> 32 & 0xFFFF} m  "
+            f"calories {v & 0x7FFFF}  mode {v >> 19 & 3}")
+
+
+def describe(p):
+    """Human readable lines for a packet sent by the band, or None if not decoded."""
+    group, cmd, d = p[3], p[5], data_of(p)
+    if group == 0x1C:
+        control = {1: "find phone", 2: "shutter", 3: "camera opened", 4: "camera closed",
+                   5: "heart rate measure closed", 6: "blood pressure measure closed",
+                   7: "hang up", 8: "heart rate measure closed", 9: "answer call",
+                   10: "music previous", 11: "music play/pause", 12: "music next",
+                   13: "SpO2 measure closed", 14: "stop find phone", 15: "asks last sleep",
+                   16: "asks timestamp", 18: "asks to disconnect"}
+        return [control.get(cmd, f"control {cmd}")]
+    if group != 0x15:
+        return None
+    day = sport_date(p) or "-"  # the daily summary carries no date on this firmware
+    if cmd == 0x07:
+        return ["stored records: start"]
+    if cmd == 0x08:
+        return ["stored records: end"]
+    if cmd == 0x0C and len(p) >= 20:
+        return [f"today: steps {int.from_bytes(p[10:14], 'big')}  "
+                f"distance {int.from_bytes(p[14:18], 'big')} m  "
+                f"calories {int.from_bytes(p[18:20], 'big')}"]
+    if cmd in (0x02, 0x0B):
+        tag = "steps" if cmd == 0x02 else "live"
+        return [f"{day} {tag} {sport_record(r)}" for r in records(p, 8)]
+    if cmd == 0x03:
+        kind = {1: "light", 2: "deep", 3: "awake", 4: "REM"}
+        return [f"{day} {hhmm(int.from_bytes(r[:2], 'big'))}  sleep {kind.get(r[3], r[3])}"
+                for r in records(p, 4)]
+    if cmd == 0x04:
+        return [f"{day} {secs_hms(int.from_bytes(r[:4], 'big'))}  heart rate {r[4]} bpm"
+                for r in records(p, 5)]
+    if cmd == 0x05:
+        return [f"{day} {secs_hms(int.from_bytes(r[:4], 'big'))}  blood pressure {r[4]}/{r[5]}"
+                for r in records(p, 6)]
+    if cmd == 0x14:
+        return [f"{day} {secs_hms(int.from_bytes(r[:4], 'big'))}  SpO2 {r[4]}%"
+                for r in records(p, 5)]
+    if cmd == 0x0E:
+        return [f"{day} {secs_hms(int.from_bytes(r[:4], 'big'))}  SpO2 {r[4]}%  "
+                f"blood pressure {r[6]}/{r[5]}  heart rate {r[7]} bpm" for r in records(p, 8)]
+    return None
+
+
+def make_printer(band):
+    def on_packet(p):
+        if p[0] != 0xCD:
+            return
+        now = datetime.datetime.now().strftime("%H:%M:%S")
+        if p[3] == 0x1C and p[5] == 0x10:
+            # band asks for the time: <unix time u32 BE> <UTC offset s i32 BE>
+            off = -time.timezone
+            band.write(packet(0x1C, 0x10, int(time.time()).to_bytes(4, "big")
+                              + off.to_bytes(4, "big", signed=True)))
+        for line in describe(p) or [f"packet {p.hex(' ')}"]:
+            print(f"{now}  {line}")
+    return on_packet
+
+
+# ---------------------------------------------------------------- alarms
+
+def read_alarms(path):
+    """Weekly list (same format as ../id115/alarms.txt) -> {"HH:MM": day mask}."""
+    mask = {}
+    with open(path) as f:
+        for line in f:
+            words = line.split("#")[0].split()
+            if not words:
+                continue
+            day = words[0].upper()
+            if day not in DAYS:
+                die(f"unknown day: {words[0]}", 2)
+            for t in words[1:]:
+                m = re.fullmatch(r"([01]?\d|2[0-3]):([0-5]\d)", t)
+                if not m:
+                    die(f"bad time: {t}", 2)
+                key = f"{int(m[1]):02d}:{m[2]}"
+                mask[key] = mask.get(key, 0) | 1 << DAYS.index(day)
+    return dict(sorted(mask.items()))
+
+
+def alarm_bytes(hh, mm, days, today):
+    """40-bit BE: (year-2000)<<34 | month<<30 | day<<25 | hour<<20 | min<<14 | 1<<11 | days"""
+    v = ((today.year - 2000) << 34 | today.month << 30 | today.day << 25 | hh << 20
+         | mm << 14 | 1 << 11 | days)
+    return v.to_bytes(5, "big")
+
+
+def day_names(m):
+    return " ".join(d for i, d in enumerate(DAYS) if m >> i & 1) or "once"
+
+
+
+# ---------------------------------------------------------------- Telink OTA
+
+OTA_CHAR = "00010203-0405-0607-0809-0a0b0c0d2b12"
+OTA_MAX = 0x7C * 1024  # bls_ota_setFirmwareSizeAndOffset(0x7c, 0x20000) in the stock firmware
+OTA_READ_EVERY = 8     # the app reads the OTA characteristic every 8 packets (flow control)
+OTA_MIN_BATTERY = 50   # the app asks for 30 %, the FitPro manual for 50 %
+
+
+def crc16(data):
+    """CRC-16/MODBUS as in com.telink.ota.ble.OtaPacketParser."""
+    crc = 0xFFFF
+    for b in data:
+        for _ in range(8):
+            crc = (0xA001 if (crc ^ b) & 1 else 0) ^ (crc >> 1)
+            b >>= 1
+    return crc
+
+
+def ota_packets(img):
+    """FF00 prepare, FF01 start, data packets, FF02 end, like the app."""
+    total = (len(img) + 15) // 16
+    pkts = [b"\x00\xff", b"\x01\xff"]
+    for i in range(total):
+        p = bytearray(b"\xff" * 20)
+        chunk = img[i * 16:(i + 1) * 16]
+        p[2:2 + len(chunk)] = chunk
+        p[0:2] = i.to_bytes(2, "little")
+        p[18:20] = crc16(p[:18]).to_bytes(2, "little")
+        pkts.append(bytes(p))
+    last = total - 1
+    end = bytearray([0x02, 0xFF]) + last.to_bytes(2, "little") + (~last & 0xFFFF).to_bytes(2, "little")
+    end += crc16(end).to_bytes(2, "little")
+    pkts.append(bytes(end))
+    return pkts
+
+
+def check_image(img):
+    """Return a list of problems with a Telink KNLT application image (empty = ok)."""
+    errs = []
+    if len(img) < 0x20:
+        return ["file too short"]
+    if img[8:12] != b"KNLT":
+        errs.append(f"no KNLT magic at +8 (found {img[8:12].hex()})")
+    size = int.from_bytes(img[0x18:0x1C], "little")
+    if size != len(img):
+        errs.append(f"size field {size:#x} != file length {len(img):#x}")
+    if len(img) > OTA_MAX:
+        errs.append(f"image {len(img)} B larger than the OTA bank ({OTA_MAX} B)")
+    want = (zlib.crc32(img[:-4]) ^ 0xFFFFFFFF) & 0xFFFFFFFF
+    have = int.from_bytes(img[-4:], "little")
+    if want != have:
+        errs.append(f"CRC32 trailer {have:#010x}, expected {want:#010x}")
+    return errs
+
+
+def ota(path, mode):
+    img = open(path, "rb").read()
+    errs = check_image(img)
+    pkts = ota_packets(img)
+    ver = re.search(rb"V\d{5}", img)
+    print(f"image   {path}")
+    print(f"size    {len(img)} B ({len(img):#x}), {len(pkts) - 3} data packets")
+    print(f"header  {img[:0x20].hex(' ')}")
+    print(f"version {ver.group().decode() if ver else '?'}")
+    print(f"crc32   {int.from_bytes(img[-4:], 'little'):#010x}")
+    for e in errs:
+        print(f"ERROR   {e}")
+    # self-check: every data packet carries its index, the right bytes and a valid CRC
+    for i, p in enumerate(pkts[2:-1]):
+        assert int.from_bytes(p[:2], "little") == i
+        assert crc16(p[:18]) == int.from_bytes(p[18:], "little")
+        assert p[2:2 + len(img[i * 16:(i + 1) * 16])] == img[i * 16:(i + 1) * 16]
+    print("packets " + " | ".join(x.hex() for x in (pkts[0], pkts[1], pkts[2], pkts[-2], pkts[-1])))
+    if errs:
+        die("image rejected", 1)
+    if mode != "--yes":
+        print("dry run: nothing sent (use --yes to flash)")
+        return
+    b = Band()
+    if "00002a19-0000-1000-8000-00805f9b34fb" in b.chars:
+        bat = b.read("2a19")[0]
+        if bat < OTA_MIN_BATTERY:
+            die(f"battery {bat}% < {OTA_MIN_BATTERY}%: charge the band first")
+    else:
+        print("no battery service (vendor OTA updater running): battery not checked")
+    tx = b.char(OTA_CHAR)
+    t0 = time.time()
+    for n, p in enumerate(pkts):
+        try:
+            tx.WriteValue(dbus.Array(p, signature="y"), {"type": "command"})
+            if 2 <= n < len(pkts) - 1 and (n - 1) % OTA_READ_EVERY == 0:
+                tx.ReadValue({})  # wait until the band has caught up
+        except dbus.DBusException as e:
+            die(f"\nOTA stopped at packet {n} of {len(pkts)} ({p[:4].hex()}): {e}")
+        if 2 <= n < len(pkts) - 1:
+            i = n - 1
+            if i % 64 == 0 or n == len(pkts) - 2:
+                pct = 100 * i // (len(pkts) - 3)
+                print(f"\r{pct:3d}%  {i}/{len(pkts) - 3} packets  {time.time() - t0:5.1f} s",
+                      end="", flush=True)
+    print(f"\nend packet sent after {time.time() - t0:.1f} s; the band verifies the image and reboots")
+
+
+# ---------------------------------------------------------------- flash dumper
+
+DUMPER_MAC = "A4:C1:38:71:6D:D0"
+DUMP_CMD = "4c543731-3644-554d-5000-000000000001"
+DUMP_DATA = "4c543731-3644-554d-5000-000000000002"
+FLASH_SIZE = 0x80000
+
+
+def dumper_band():
+    global MAC, DEV
+    MAC = os.environ.get("DUMPER_MAC", DUMPER_MAC)
+    DEV = f"/org/bluez/{HCI}/dev_{MAC.replace(':', '_')}"
+    return Band()
+
+
+def dumper_listen(b, handler):
+    path = b.chars[DUMP_DATA]
+    b.bus.add_signal_receiver(
+        lambda i, props, inv: handler(bytes(props["Value"])) if "Value" in props else None,
+        "PropertiesChanged", PROPS, "org.bluez", path)
+    if not getattr(b, "dump_notify", False):
+        b.char(DUMP_DATA).StartNotify()
+        b.dump_notify = True
+
+
+def dumper_info(b):
+    got = []
+    dumper_listen(b, lambda v: got.append(v) if v[:4] == b"\xff\xff\xff\xff" else None)
+    b.char(DUMP_CMD).WriteValue(dbus.Array(b"\x03", signature="y"), {"type": "request"})
+    b.run(3, until=lambda p: bool(got))
+    if not got:
+        die("no info reply from the dumper")
+    v = got[0]
+    if v[4:8] != b"LTDP":
+        die(f"unexpected reply {v.hex(' ')}")
+    return {"version": v[8], "reg63e": v[9], "flash_mid": int.from_bytes(v[10:14], "little"),
+            "flag0": v[14], "flag1": v[15], "size0": int.from_bytes(v[16:20], "little")}
+
+
+def dump(b, out):
+    """Read the whole flash; missing 16-byte blocks are asked again."""
+    blocks = {}
+    t0 = time.time()
+
+    def on_data(v):
+        if len(v) == 20 and v[:4] != b"\xff\xff\xff\xff":
+            blocks[int.from_bytes(v[:4], "little")] = v[4:]
+
+    dumper_listen(b, on_data)
+    cmd = b.char(DUMP_CMD)
+
+    def request(addr, n):
+        cmd.WriteValue(dbus.Array(b"\x01" + addr.to_bytes(4, "little") + n.to_bytes(4, "little"),
+                                  signature="y"), {"type": "request"})
+
+    def progress():
+        print(f"\r{100 * len(blocks) * 16 // FLASH_SIZE:3d}%  {len(blocks) * 16 // 1024} KB  "
+              f"{time.time() - t0:5.1f} s", end="", file=sys.stderr, flush=True)
+        return True
+
+    timer = GLib.timeout_add(1000, progress)
+    request(0, FLASH_SIZE)
+    # wait until the stream stops arriving for 3 s
+    last = [-1]
+
+    def stalled():
+        if len(blocks) == last[0]:
+            b.loop.quit()
+            return False
+        last[0] = len(blocks)
+        return True
+
+    GLib.timeout_add(3000, stalled)
+    b.loop.run()
+    for attempt in range(5):
+        missing = [a for a in range(0, FLASH_SIZE, 16) if a not in blocks]
+        if not missing:
+            break
+        print(f"\n{len(missing)} blocks missing, asking again ({attempt + 1}/5)", file=sys.stderr)
+        # coalesce into runs
+        runs, start, prev = [], missing[0], missing[0]
+        for a in missing[1:]:
+            if a != prev + 16:
+                runs.append((start, prev + 16 - start))
+                start = a
+            prev = a
+        runs.append((start, prev + 16 - start))
+        for a, n in runs[:64]:
+            request(a, n)
+            last[0] = -1
+            GLib.timeout_add(3000, stalled)
+            b.loop.run()
+    GLib.source_remove(timer)
+    print(file=sys.stderr)
+    missing = [a for a in range(0, FLASH_SIZE, 16) if a not in blocks]
+    if missing:
+        die(f"{len(missing)} blocks still missing, first at {missing[0]:#x}; nothing saved")
+    data = b"".join(blocks[a] for a in range(0, FLASH_SIZE, 16))
+    open(out, "wb").write(data)
+    print(f"{out}: {len(data)} bytes in {time.time() - t0:.0f} s, md5 {hashlib.md5(data).hexdigest()}")
+    return data
+
+
+ASSET_START, ASSET_END = 0x29000, 0x70000
+
+
+def write_assets(b, src_path, cur_path, out_path):
+    """Copy [ASSET_START, ASSET_END) of src into the band's flash, sector by sector, with a
+    read-back check by the dumper for every page and a full re-dump at the end."""
+    src = open(src_path, "rb").read()
+    cur = open(cur_path, "rb").read()
+    if len(src) < ASSET_END or len(cur) != FLASH_SIZE:
+        die("source or current dump has the wrong size")
+    status = []
+    dumper_listen(b, lambda v: status.append(v) if v[:5] == b"\xfe\xff\xff\xff" + b"S" else None)
+    cmd = b.char(DUMP_CMD)
+
+    def send(data):
+        cmd.WriteValue(dbus.Array(data, signature="y"), {"type": "request"})
+
+    def wait(op, addr):
+        t_end = time.time() + 10
+        while time.time() < t_end:
+            ctx = GLib.MainContext.default()
+            while ctx.pending():
+                ctx.iteration(False)
+            for v in status:
+                if v[5] == op:
+                    status.remove(v)
+                    st, a = v[6], int.from_bytes(v[7:11], "little")
+                    if st != 0:
+                        die(f"\ndumper refused op {op:#x} at {a:#x}: status {st}")
+                    return
+            time.sleep(0.005)
+        die(f"\nno answer from the dumper for op {op:#x} at {addr:#x}")
+
+    sectors = [a for a in range(ASSET_START, ASSET_END, 0x1000) if src[a:a + 0x1000] != cur[a:a + 0x1000]]
+    print(f"{len(sectors)} of {(ASSET_END - ASSET_START) // 0x1000} sectors differ")
+    t0 = time.time()
+    for k, sec in enumerate(sectors):
+        send(b"\x10" + sec.to_bytes(4, "little"))
+        wait(0x10, sec)
+        for page in range(sec, sec + 0x1000, 256):
+            data = src[page:page + 256]
+            if data == b"\xff" * 256:
+                continue  # erased already
+            send(b"\x11" + page.to_bytes(4, "little"))
+            for off in range(0, 256, 18):
+                send(bytes([0x12, off]) + data[off:off + 18])
+            send(b"\x13")
+            wait(0x13, page)
+        print(f"\r{k + 1}/{len(sectors)} sectors  {sec:#07x}  {time.time() - t0:5.0f} s", end="",
+              flush=True)
+    print("\nwritten; reading the whole flash back to verify...")
+    new = dump(b, out_path)
+    bad = [a for a in range(ASSET_START, ASSET_END) if new[a] != src[a]]
+    other = [a for a in range(FLASH_SIZE) if not ASSET_START <= a < ASSET_END and new[a] != cur[a]]
+    if bad:
+        die(f"asset area differs from the source at {len(bad)} bytes, first {bad[0]:#x}")
+    print("asset area now identical to the source")
+    print(f"outside the asset area: {len(other)} bytes changed" +
+          (f" (first {other[0]:#x})" if other else " (none, as expected)"))
+
+
+def bank0_image(data):
+    """The application at 0x0 with its boot flag set back to 0x4b, as OTA expects it."""
+    size = int.from_bytes(data[0x18:0x1C], "little")
+    img = bytearray(data[:size])
+    img[8] = 0x4B  # the stock OTA clears this byte (00) when it switches to the other bank
+    return bytes(img)
+
+# ---------------------------------------------------------------- commands
+
+def parse_window(arg, default):
+    a, b = (arg or default).split("-")
+    return int(a), int(b)
+
+
+def onoff(v):
+    if v not in ("on", "off"):
+        die(f"expected on|off, got: {v}", 2)
+    return 1 if v == "on" else 0
+
+
+def main(argv):
+    if not argv:
+        usage()
+    c, args = argv[0], argv[1:]
+
+    if c == "info":
+        b = Band()
+        pnp = b.read("2a50")
+        feat = b.read("2a28").rstrip(b"\0").decode(errors="replace")
+        print(f"name {b.prop('Name')}  mac {MAC}")
+        print(f"firmware {b.read('2a26').decode(errors='replace')}  "
+              f"vid:pid {int.from_bytes(pnp[1:3], 'little'):04x}:"
+              f"{int.from_bytes(pnp[3:5], 'little'):04x}")
+        print(f"features {feat}  (" + " ".join(
+            f"{FEATURES[i] if i < len(FEATURES) else i}={ch}" for i, ch in enumerate(feat)
+            if ch != "0") + ")")
+        print(f"battery {b.read('2a19')[0]}%")
+    elif c == "battery":
+        print(f"{Band().read('2a19')[0]}%")
+    elif c == "settime":
+        t = datetime.datetime.now()
+        Band().cmd(packet(0x12, 0x01, clock(t)))
+        print(f"clock set to {t:%Y-%m-%d %H:%M:%S}")
+    elif c == "find":
+        Band().cmd(switch(0x12, 0x0B, 1))
+    elif c == "notify":
+        kind = "whatsapp"
+        if args[:1] == ["-t"]:
+            kind, args = (args[1] if len(args) > 1 else ""), args[2:]
+        if kind not in NOTIFY_TYPES:
+            die(f"unknown type: {kind}; types: {' '.join(NOTIFY_TYPES)}", 2)
+        if not args:
+            die("usage: lt716 notify [-t type] <text>", 2)
+        text = " ".join(args).encode()
+        if len(text) > 300:
+            print("text truncated to 300 bytes", file=sys.stderr)
+            text = text[:300].decode(errors="ignore").encode()
+        # <type> 00 00 <UTF-8 text>; the app sends "title:text"
+        Band().cmd(packet(0x12, 0x12, bytes([NOTIFY_TYPES[kind], 0, 0]) + text))
+    elif c == "alerts":
+        b = Band()
+        # send back as many switches as the band reports (11 on this firmware)
+        cur = [p for p in b.send(packet(0x1A, 0x04)) if p[3] == 0x1A and p[5] == 0x04]
+        n = len(data_of(cur[0])) if cur else 11
+        b.cmd(packet(0x12, 0x07, bytes([onoff(args[0] if args else "")] * n)))
+    elif c == "call":
+        secs = 10
+        if args[:1] == ["-s"]:
+            secs, args = float(args[1]), args[2:]
+        if not args:
+            die("usage: lt716 call [-s seconds] <caller>", 2)
+        caller = " ".join(args).encode()[:300]
+        b = Band()
+        # <state> 00 <caller UTF-8>; state 1 = ringing, 2 = answered, 0 = ended
+        b.cmd(packet(0x12, 0x11, b"\x01\x00" + caller))
+        print(f"ringing: {caller.decode()}")
+        b.listen(make_printer(b))  # the band may send answer / hang up
+        b.run(secs, until=lambda p: p[0] == 0xCD and p[3] == 0x1C and p[5] in (7, 9))
+        b.cmd(packet(0x12, 0x11, b"\x00\x00" + caller))
+        print("call ended")
+    elif c == "alarms":
+        b = Band()
+        if args[:1] == ["--show"]:
+            got = [p for p in b.send(bytes([0xCD, 0, 2, 0x18, 1])) if p[3] == 0x18]
+            d = data_of(got[0]) if got else b""
+            for i in range(0, len(d) - 4, 5):
+                v = int.from_bytes(d[i:i + 5], "big")
+                print(f"{v >> 20 & 0x1F:02d}:{v >> 14 & 0x3F:02d}  {day_names(v & 0x7F)}")
+            if not d:
+                print("no alarms")
+            return
+        alarms = read_alarms(args[0] if args else os.path.join(HERE, "alarms.txt"))
+        if len(alarms) > 8:
+            die(f"too many distinct times: {len(alarms)} (max 8): {' '.join(alarms)}", 2)
+        today = datetime.date.today()
+        data = b""
+        for t, m in alarms.items():
+            print(f"{t}  {day_names(m)}")
+            data += alarm_bytes(int(t[:2]), int(t[3:]), m, today)
+        b.cmd(packet(0x12, 0x02, data))
+        print(f"{len(alarms)} alarms written")
+    elif c == "camera":
+        Band().cmd(switch(0x12, 0x0C, onoff(args[0] if args else "")))
+    elif c == "goal":
+        if not args or not args[0].isdigit():
+            die("usage: lt716 goal <steps>", 2)
+        Band().cmd(packet(0x12, 0x03, int(args[0]).to_bytes(4, "big")))
+    elif c == "profile":
+        b = Band()
+        cur = [p for p in b.send(packet(0x1A, 0x01)) if p[3] == 0x1A and p[5] == 0x01]
+        if not cur:
+            die("could not read the current profile")
+        v = int.from_bytes(data_of(cur[0])[:4], "big")
+        p = {"gender": "male" if v >> 31 & 1 else "female", "age": v >> 24 & 0x7F,
+             "height": v >> 15 & 0x1FF, "weight": v >> 5 & 0x3FF,
+             "unit": "mi" if v & 0x1F == 2 else "km"}
+        for a in args:
+            k, _, val = a.partition("=")
+            if k not in p or not val:
+                die(f"unknown option: {a}", 2)
+            p[k] = val
+        if p["gender"] not in ("male", "female") or p["unit"] not in ("km", "mi"):
+            die("gender=male|female unit=km|mi", 2)
+        v = ((p["gender"] == "male") << 31 | int(p["age"]) << 24 | int(p["height"]) << 15
+             | int(p["weight"]) << 5 | (1 if p["unit"] == "km" else 2))
+        b.cmd(packet(0x12, 0x04, v.to_bytes(4, "big")))
+        print(decode_profile(v))
+    elif c in ("lift", "dnd"):
+        on = onoff(args[0] if args else "")
+        s, e = parse_window(args[1] if len(args) > 1 else None, "08-22" if c == "lift" else "22-08")
+        Band().cmd(packet(0x12, 0x09 if c == "lift" else 0x14, window(on, s, e)))
+    elif c == "lang":
+        if not args or args[0].lower() not in LANGS:
+            die(f"lang: {' '.join(LANGS)}", 2)
+        Band().cmd(switch(0x12, 0x15, LANGS[args[0].lower()]))
+    elif c == "settings":
+        b = Band()
+        for p in b.send(*(packet(0x1A, k) for k in (1, 2, 3, 4, 6, 7, 9))):
+            if p[3] == 0x1A:
+                print(decode_setting(p[5], data_of(p)))
+    elif c == "steps":
+        b = Band()
+        got = []
+        b.listen(lambda p: got.append(p) if p[0] == 0xCD and p[3] == 0x15 and p[5] == 0x0C
+                 else None)
+        b.write(switch(0x15, 0x0D, 1))
+        b.run(5, until=lambda p: bool(got))
+        if not got:
+            die("no reply from band")
+        print(describe(got[0])[0])
+    elif c == "measure":
+        if not args or args[0] not in MEASURE:
+            die("usage: lt716 measure hr|bp|spo2 [seconds]", 2)
+        t = MEASURE[args[0]]
+        b = Band()
+        b.listen(make_printer(b))
+        b.cmd(packet(0x12, 0x24, [t, 1]))
+        print(f"measuring {args[0]}, keep the band on the wrist...")
+        b.run(float(args[1]) if len(args) > 1 else 60,
+              until=lambda p: p[0] == 0xCD and p[3] == 0x1C and p[5] in (5, 6, 8, 13))
+        b.write(packet(0x12, 0x24, [t, 0]))
+    elif c == "live":
+        b = Band()
+        b.listen(make_printer(b))
+        b.write(switch(0x15, 0x06, 1))  # real-time steps on
+        b.run(float(args[0]) if args else 60)
+    elif c == "reset":
+        if args[:1] != ["--yes"]:
+            die("this restores factory settings; run: lt716 reset --yes", 2)
+        Band().write(bytes([0xCD, 0, 2, 0x1D, 1]))
+    elif c == "dumper":
+        # talk to the flash dumper (firmware/dumper) running in bank 0x20000
+        sub = args[0] if args else "info"
+        b = dumper_band()
+        if sub == "info":
+            i = dumper_info(b)
+            print(f"dumper v{i['version']}  boot register 0x63e = {i['reg63e']:#04x}  "
+                  f"flash mid {i['flash_mid']:#08x}")
+            print(f"bank 0x00000 flag {i['flag0']:#04x}, size {i['size0']:#x};  "
+                  f"bank 0x20000 flag {i['flag1']:#04x}")
+        elif sub == "dump":
+            out = args[1] if len(args) > 1 else os.path.join(HERE, "files", "firmware",
+                                                              "LT716_flash.bin")
+            data = dump(b, out)
+            img = bank0_image(data)
+            errs = check_image(img)
+            ver = re.search(rb"V\d{5}", img)
+            name = f"LT716_{ver.group().decode() if ver else 'bank0'}.ota.bin"
+            path = os.path.join(os.path.dirname(out), name)
+            if errs:
+                print("bank 0 image NOT valid: " + "; ".join(errs))
+            else:
+                open(path, "wb").write(img)
+                print(f"bank 0 image OK (CRC32 matches): {path}")
+                print("to leave the dumper: ./lt716 dumper updater, then ./lt716 ota <image> --yes")
+        elif sub == "reboot":
+            b.char(DUMP_CMD).WriteValue(dbus.Array(b"\x04", signature="y"), {"type": "request"})
+        elif sub == "assets":
+            # dumper assets <source dump> [current dump]
+            if len(args) < 2:
+                die("usage: lt716 dumper assets <source.bin> [current.bin]", 2)
+            fw = os.path.join(HERE, "files", "firmware")
+            cur = args[2] if len(args) > 2 else os.path.join(fw, "LT716_flash.bin")
+            i = dumper_info(b)
+            if i["version"] < 2:
+                die("this dumper cannot write: install dumper v2 first")
+            write_assets(b, args[1], cur, os.path.join(fw, "LT716_flash_after_assets.bin"))
+        elif sub == "updater":
+            # clear the dumper's own magic at 0x8 and reboot into the vendor updater (0x20000)
+            b.char(DUMP_CMD).WriteValue(dbus.Array(b"\x05UPDT", signature="y"), {"type": "request"})
+            print("asked the dumper to start the vendor updater; it reboots in a moment")
+        else:
+            die("usage: lt716 dumper info|dump [file]|assets <src.bin>|updater|reboot", 2)
+    elif c == "ota" and args[:1] == ["--enter-updater"]:
+        # what the stock firmware does on "00 FF"/"01 FF": clear its own magic at 0x8 and wait
+        # 40 s for data; with no data packet it erases nothing and reboots into the updater
+        b = Band()
+        tx = b.char(OTA_CHAR)
+        for p in (b"\x00\xff", b"\x01\xff"):
+            tx.WriteValue(dbus.Array(p, signature="y"), {"type": "command"})
+        print("OTA start sent without data: the band should reboot into the updater within ~40 s")
+    elif c == "ota":
+        if not args or args[1:2] not in ([], ["--dry-run"], ["--yes"]):
+            die("usage: lt716 ota <file.bin> [--dry-run|--yes]", 2)
+        ota(args[0], args[1] if len(args) > 1 else "--dry-run")
+    elif c == "raw":
+        if not args:
+            die("usage: lt716 raw <hex> [<hex>...]", 2)
+        b = Band()
+        got = []
+        b.listen(got.append)
+        for h in args:
+            b.write(bytes.fromhex(h.replace(" ", "")))
+        b.run(1.5, idle=True)
+        for p in got:
+            print(p.hex(" "))
+    else:
+        usage()
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

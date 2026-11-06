@@ -29,3 +29,11 @@ Homestead.json
 .env.production
 .phpactor.json
 auth.json
+
+# APK e decompilato: grandi, si rigenerano (vedi README)
+files/apk/
+.idea/
+files/firmware/
+firmware/vendor/
+firmware/*/_build/
+__pycache__/
