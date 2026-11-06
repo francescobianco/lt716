@@ -33,7 +33,7 @@ Usage:
                                      --yes it only checks the image and builds the packets
   ./lt716 ota --enter-updater        start an OTA without data: the stock firmware reboots
                                      into the vendor updater (bank 0x20000) after ~40 s
-  ./lt716 dumper info|dump [file]|assets <src.bin>|updater|reboot
+  ./lt716 dumper info|dump [file]|assets <src.bin>|touchlog [s]|lcd ...|updater|reboot
                                      talk to the flash dumper (firmware/dumper) once it runs
   ./lt716 reset --yes                factory reset (1D)
   ./lt716 raw <hex> [<hex>...]       send raw packets to the UART and print the replies
@@ -932,6 +932,42 @@ def main(argv):
             if i["version"] < 2:
                 die("this dumper cannot write: install dumper v2 first")
             write_assets(b, args[1], cur, os.path.join(fw, "LT716_flash_after_assets.bin"))
+        elif sub == "touchlog":
+            # MorseOS: print every press, letter and word the band decodes
+            def on_ev(v):
+                if v[:4] != b"\xfd\xff\xff\xff":
+                    return
+                now = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                k = chr(v[4])
+                if k == "T":
+                    press, gap, dot, dash = (int.from_bytes(v[i:i + 2], "little") for i in (6, 8, 10, 12))
+                    print(f"{now}  {chr(v[5])}  press {press:4d} ms  gap {gap:5d} ms  "
+                          f"avg dot {dot} ms  dash {dash} ms")
+                elif k == "L":
+                    pat = bytes(x for x in v[6:] if x in b".-").decode()
+                    print(f"{now}  letter {chr(v[5])}  ({pat})")
+                elif k == "W":
+                    print(f"{now}  WORD {bytes(x for x in v[5:] if x).decode(errors='replace')}")
+                sys.stdout.flush()
+            dumper_listen(b, on_ev)
+            secs = float(args[1]) if len(args) > 1 else 120
+            print(f"listening {secs:.0f} s: type Morse on the touch key")
+            GLib.timeout_add(int(secs * 1000), b.loop.quit)
+            try:
+                b.loop.run()
+            except KeyboardInterrupt:
+                pass
+        elif sub == "lcd":
+            # display test firmware: lcd <col> <row> <w> <h> <madctl> <invert> | lcd reinit
+            if args[1:2] == ["reinit"]:
+                b.char(DUMP_CMD).WriteValue(dbus.Array(b"\x21", signature="y"), {"type": "request"})
+            elif len(args) == 7:
+                v = [int(x, 0) for x in args[1:]]
+                b.char(DUMP_CMD).WriteValue(dbus.Array(bytes([0x20] + v), signature="y"),
+                                            {"type": "request"})
+                print(f"col {v[0]} row {v[1]} size {v[2]}x{v[3]} madctl {v[4]:#04x} invert {v[5]}")
+            else:
+                die("usage: lt716 dumper lcd <col> <row> <w> <h> <madctl> <invert> | lcd reinit", 2)
         elif sub == "updater":
             # clear the dumper's own magic at 0x8 and reboot into the vendor updater (0x20000)
             b.char(DUMP_CMD).WriteValue(dbus.Array(b"\x05UPDT", signature="y"), {"type": "request"})

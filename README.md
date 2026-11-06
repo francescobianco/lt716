@@ -221,12 +221,56 @@ Il firmware rifiuta da sé ogni scrittura fuori dalla zona risorse.
 firmware/build.sh dumper        # SDK e-lab (commit cebf23e) in Docker -> _build/lt716_dumper.ota.bin
 ```
 
+### Display (trovato con `firmware/disptest`)
+
+Il pannello 0,96" è un ST7735S 80×160 sui pin documentati da e-lab (MOSI PC3, CLK PC5, DC PC1,
+RST PA6, CS PA1, retroilluminazione PB3 attiva alta; tasto touch PC2 attivo alto):
+
+| Parametro | Valore |
+|---|---|
+| finestra | 80×160 verticale, offset colonna 26, riga 1 |
+| MADCTL | `0xC8` (MY \| MX \| BGR): tasto in basso, come il firmware originale |
+| inversione | INVON |
+
+`firmware/disptest` disegna cornice, barre RGB, una freccia verso l'alto e l'indicatore del tasto;
+i parametri si cambiano al volo con `./lt716 dumper lcd <col> <row> <w> <h> <madctl> <inv>`.
+Tasto tenuto 10 s = ritorno all'aggiornatore senza Bluetooth.
+
 ### Server FitPro
 
 L'app chiede il firmware a
 `https://tomato.gulaike.com/api/v1/config/app?name=716&type=1&version=V15381&platform=1`, con
 un token fisso nell'APK e header `country: foreign`. Per `716` (anche con versioni più vecchie,
 `LT716`, `LH716`) risponde `{"success":true,"data":null}`: nessun firmware pubblicato.
+
+## MorseOS
+
+Firmware nostro per l'LT716 (`firmware/morseos/`, versione 0.3): il tasto touch si usa in Morse.
+
+- **Quadrante**: ora grande `00:00` a 7 segmenti, sotto `SAB 7`, in alto `BT` (verde se connesso)
+  e batteria, in fondo il segno del tocco (giallo mentre premi). Lo schermo si spegne dopo 15 s;
+  il tocco che lo riaccende mostra solo il quadrante.
+- **Accesso**: la parola Morse **TAN** (`- .- -.`) apre il menu. Il decodificatore impara il ritmo
+  di chi lo usa (medie separate di punto e linea), chiude la lettera dopo 600 ms di pausa e
+  riconosce TAN appena è completa; linea oltre 2,5 s = annulla.
+- **Menu a riquadri**: due box per schermata, quello in alto è selezionato. Tocco veloce: il box
+  di sotto sale e appare il successivo (a giro). Tocco lungo (> 600 ms, breve vibrazione):
+  conferma. Voci: INFO (versione, batteria, BT, accensione, tempi Morse), TORNA.
+- **Da PC** (indirizzo `A4:C1:38:71:6D:D0`): `MAC=A4:C1:38:71:6D:D0 ./lt716 settime | notify | find`
+  (protocollo FitPro su UART: ora, trova braccialetto, notifiche e chiamate mostrate a schermo),
+  `./lt716 dumper touchlog` per vedere ogni tocco, lettera e parola.
+- **Sicurezza**: come il dumper risponde a `./lt716 dumper updater`; in più tasto tenuto 10 s =
+  ritorno all'aggiornatore senza Bluetooth.
+
+Nota: la build installata è la 0.3 con un byte sbagliato nell'UUID del servizio UART
+(`…dcca9e`); il sorgente è già corretto (`…dcca9d`), quindi i comandi `lt716` sulla UART
+funzionano dalla prossima build.
+
+```shell
+firmware/build.sh morseos       # -> firmware/morseos/_build/morseos.ota.bin
+./lt716 dumper updater          # dal firmware in esecuzione all'aggiornatore
+./lt716 ota firmware/morseos/_build/morseos.ota.bin --yes
+```
 
 ## File
 
@@ -236,6 +280,8 @@ un token fisso nell'APK e header `country: foreign`. Per `716` (anche con versio
 | `alarms.txt` | sveglie applicate da `./lt716 alarms` |
 | `files/protocol-notes.md` | protocollo completo ricavato dall'APK |
 | `firmware/dumper/` | sorgenti del firmware dumper |
+| `firmware/disptest/` | firmware di prova del display (geometria, colori, orientamento) |
+| `firmware/morseos/` | MorseOS: quadrante, input Morse, menu, FitPro su UART |
 | `firmware/build.sh`, `firmware/telink_fw.py` | build in Docker e post-processing dell'immagine (padding, `5D 02`, CRC32) |
 | `files/apk/` | APK FitPro e decompilato jadx (esclusi da git, vedi sotto) |
 | `files/firmware/` | dump della flash e immagini (esclusi da git) |
