@@ -1,11 +1,13 @@
 /*
- * MorseOS v0.3 for the LT716 (Telink TLSR8232): watch face, Morse access (TAN), menu.
+ * MorseOS for the LT716 (Telink TLSR8232): core/system module. BLE, GATT, flash dumper
+ * commands, the two ways back to the vendor updater, and the main loop. What else is in the
+ * firmware (apps, libraries) is decided by bundle.ini, see tools/bundle.py.
  *
  * Built on the flash dumper / display test firmware: same BLE services and commands
  * (dump, info, lcd, updater), same two ways back to the vendor updater:
  *   - BLE command 05 'UPDT'
- *   - touch key held 10 s (three short buzzes), no BLE needed
- * The UI is in ui.c, the Morse decoder in morse.c, the FitPro UART subset in fitpro.c.
+ *   - touch key held 20 s (warning at 10 s, then three short buzzes), no BLE needed
+ * The UI framework is core/ui (mos.c); apps are in apps/, libraries in lib/.
  */
 
 #include "drivers/5316/bsp.h"
@@ -23,8 +25,19 @@
 #include "stack/ble/att.h"
 #include "vendor/common/blt_common.h"
 #include "st7735.h"
+#include "mos.h"
+#ifdef MOS_HAVE_FITPRO
 #include "fitpro.h"
-#include "ui.h"
+#endif
+#ifdef MOS_HAVE_BATTERY
+#include "battery.h"
+#endif
+#ifdef MOS_HAVE_RTC
+#include "rtc.h"
+#endif
+#ifdef MOS_HAVE_MESSAGE
+#include "message.h"
+#endif
 
 #define DUMPER_VERSION 4   /* 4 = MorseOS 0.1 */
 #define ASSET_START    0x29000
@@ -32,7 +45,8 @@
 #define FLASH_SIZE     0x80000
 #define PIN_MOTOR      GPIO_PA5  /* active high, plain GPIO (docs/hardware.md) */
 #define PIN_TOUCH      GPIO_PC2  /* active high while touched */
-#define EMERGENCY_US   (10 * 1000 * 1000)
+#define EMERGENCY_WARN_MS 10000  /* red "release to cancel" screen */
+#define EMERGENCY_MS      20000  /* back to the vendor updater */
 
 MYFIFO_INIT(blt_rxfifo, 64, 8);
 MYFIFO_INIT(blt_txfifo, 40, 16);
@@ -47,8 +61,12 @@ static const u8 tbl_advData[] = {
 };
 
 extern const u16 dump_data_handle;
+#ifdef MOS_HAVE_FITPRO
 extern const u16 nus_tx_handle;
+#endif
+#ifdef MOS_HAVE_BATTERY
 extern u8 my_batVal[1];
+#endif
 extern void my_att_init(void);
 
 static volatile u8  stream_on;
@@ -236,9 +254,20 @@ static void notify(const u8 *pkt, int len) {
     if (connected) bls_att_pushNotifyData(dump_data_handle, (u8 *)pkt, len);
 }
 
+#ifdef MOS_HAVE_FITPRO
 static void nus_tx(const u8 *pkt, int len) {
     if (connected) bls_att_pushNotifyData(nus_tx_handle, (u8 *)pkt, len);
 }
+
+static void find_band(void) {
+    int i;
+    mos_wake();
+    for (i = 0; i < 3; i++) {
+        mos_buzz(200);
+        sleep_us(150 * 1000);
+    }
+}
+#endif
 
 static void buzz(int ms) {
     gpio_write(PIN_MOTOR, 1);
@@ -252,13 +281,13 @@ static void buzz(int ms) {
 
 static void on_connect(u8 e, u8 *p, int n) {
     connected = 1;
-    ui_set_connected(1);
+    mos_set_connected(1);
     bls_l2cap_requestConnParamUpdate(6, 12, 0, 400);  // 7.5-15 ms, no latency, 4 s timeout
 }
 
 static void on_terminate(u8 e, u8 *p, int n) {
     connected = 0;
-    ui_set_connected(0);
+    mos_set_connected(0);
     stream_on = 0;
 }
 
@@ -311,33 +340,51 @@ int main() {
     buzz(300);  // "alive"
     lcd_init();
     lcd_backlight(1);
+#ifdef MOS_HAVE_FITPRO
     {
-        static ui_cb_t ui_cb;
         static fitpro_cb_t fp_cb;
-        ui_cb.notify = notify;
-        ui_cb.buzz = buzz;
         fp_cb.tx = nus_tx;
-        fp_cb.find = ui_find;
-        fp_cb.message = ui_message;
+        fp_cb.find = find_band;
+#ifdef MOS_HAVE_MESSAGE
+        fp_cb.message = message_show;
+#endif
         fitpro_init(&fp_cb);
-        ui_init(&ui_cb);
     }
+#endif
+#ifdef MOS_HAVE_BATTERY
+    battery_update();
+#endif
+    mos_init(buzz, notify);
 
     irq_enable();
 
-    int emergency_armed = 1;
+    int emergency_stage = 0;  /* 0 idle, 1 warning shown, 2 done/refused */
     while (1) {
         blt_sdk_main_loop();
 
         int t = gpio_read(PIN_TOUCH) ? 1 : 0;
-        ui_poll(t);
+#ifdef MOS_HAVE_RTC
+        rtc_poll();
+#endif
+#ifdef MOS_HAVE_BATTERY
+        battery_poll();
+        my_batVal[0] = battery_level();
+#endif
+        mos_poll(t);
+#ifdef MOS_HAVE_FITPRO
         fitpro_poll();
-        my_batVal[0] = ui_battery_level();
-        /* emergency exit: key held 10 s, with or without BLE */
+#endif
+
+        /* emergency exit, with or without BLE: hold 10 s -> warning, 20 s -> updater */
         if (!t) {
-            emergency_armed = 1;
-        } else if (emergency_armed && ui_press_ms() > EMERGENCY_US / 1000) {
-            emergency_armed = 0;  /* if refused, release and hold again */
+            if (emergency_stage == 1) mos_emergency_warning(0);  /* released: cancelled */
+            emergency_stage = 0;
+        } else if (emergency_stage == 0 && mos_press_ms() > EMERGENCY_WARN_MS) {
+            emergency_stage = 1;
+            buzz(400);
+            mos_emergency_warning(1);
+        } else if (emergency_stage == 1 && mos_press_ms() > EMERGENCY_MS) {
+            emergency_stage = 2;  /* if refused, release and start again */
             buzz(100);
             sleep_us(100 * 1000);
             buzz(100);
@@ -354,7 +401,7 @@ int main() {
         if (redraw_pending) {
             redraw_pending = 0;
             lcd_apply();
-            ui_redraw();
+            mos_redraw();
         }
 
         if (!connected) continue;

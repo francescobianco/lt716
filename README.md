@@ -245,26 +245,36 @@ un token fisso nell'APK e header `country: foreign`. Per `716` (anche con versio
 
 ## MorseOS
 
-Firmware nostro per l'LT716 (`firmware/morseos/`, versione 0.3): il tasto touch si usa in Morse.
+Firmware nostro per l'LT716 (`firmware/morseos/`, versione 0.5): il tasto touch si usa in Morse.
+Roadmap e idee: [`firmware/morseos/IDEE.md`](firmware/morseos/IDEE.md).
 
-- **Quadrante**: ora grande `00:00` a 7 segmenti, sotto `SAB 7`, in alto `BT` (verde se connesso)
-  e batteria, in fondo il segno del tocco (giallo mentre premi). Lo schermo si spegne dopo 15 s;
-  il tocco che lo riaccende mostra solo il quadrante.
+- **Quadrante**: ora grande `00:00` a 7 segmenti, sotto `SAB 7`, in alto `BT` e batteria, in fondo
+  il segno del tocco. Schermo spento dopo 15 s; il tocco che lo riaccende mostra solo il quadrante.
 - **Accesso**: la parola Morse **TAN** (`- .- -.`) apre il menu. Il decodificatore impara il ritmo
-  di chi lo usa (medie separate di punto e linea), chiude la lettera dopo 600 ms di pausa e
-  riconosce TAN appena è completa; linea oltre 2,5 s = annulla.
-- **Menu a riquadri**: due box per schermata, quello in alto è selezionato. Tocco veloce: il box
-  di sotto sale e appare il successivo (a giro). Tocco lungo (> 600 ms, breve vibrazione):
-  conferma. Voci: INFO (versione, batteria, BT, accensione, tempi Morse), TORNA.
-- **Da PC** (indirizzo `A4:C1:38:71:6D:D0`): `MAC=A4:C1:38:71:6D:D0 ./lt716 settime | notify | find`
-  (protocollo FitPro su UART: ora, trova braccialetto, notifiche e chiamate mostrate a schermo),
-  `./lt716 dumper touchlog` per vedere ogni tocco, lettera e parola.
-- **Sicurezza**: come il dumper risponde a `./lt716 dumper updater`; in più tasto tenuto 10 s =
-  ritorno all'aggiornatore senza Bluetooth.
+  (medie separate di punto e linea), chiude la lettera dopo 600 ms, riconosce TAN appena completa.
+- **Menu a riquadri**: due box per schermata, quello in alto è selezionato; tocco veloce scorre,
+  tocco lungo (> 600 ms, breve vibrazione) apre. MENU: INFO, STRUMENTI, TORNA;
+  STRUMENTI: PRATICA (lettera da scrivere col suggerimento, OK/NO, punti; 3 s premuto = esci).
+- **Da PC** (`MAC=A4:C1:38:71:6D:D0`): `./lt716 settime | notify | find | battery`,
+  `./lt716 dumper touchlog`.
+- **Sicurezza**: `./lt716 dumper updater`; tasto tenuto 10 s = schermo rosso "RILASCIA PER
+  ANNULLARE", 20 s = aggiornatore del produttore.
 
-Nota: la build installata è la 0.3 con un byte sbagliato nell'UUID del servizio UART
-(`…dcca9e`); il sorgente è già corretto (`…dcca9d`), quindi i comandi `lt716` sulla UART
-funzionano dalla prossima build.
+### Moduli e manifest
+
+```
+firmware/morseos/
+├── bundle.ini        manifest: [apps] e [features] da includere (y/n)
+├── core/system       BLE, GATT, comandi dumper, aggiornatore, emergenza, main loop
+├── core/ui           framework (mos.h): app, menu generati dal bundle, input, schermo
+├── lib/              display, font, morse, rtc, battery, fitpro
+└── apps/             face, info, practice, message
+```
+
+Ogni modulo ha un `module.ini` (`type`, `depends`, `sources`, `menu`, `label`).
+`firmware/tools/bundle.py` (lanciato da `build.sh`) risolve le dipendenze, scarta le librerie che
+nessun modulo selezionato usa (insieme ai loro servizi GATT e voci di menu), genera `_gen/`
+(`bundle.h`, `bundle.mk`, tabella delle app) e dopo la build stampa flash e RAM per modulo.
 
 ```shell
 firmware/build.sh morseos       # -> firmware/morseos/_build/morseos.ota.bin
@@ -281,7 +291,8 @@ firmware/build.sh morseos       # -> firmware/morseos/_build/morseos.ota.bin
 | `files/protocol-notes.md` | protocollo completo ricavato dall'APK |
 | `firmware/dumper/` | sorgenti del firmware dumper |
 | `firmware/disptest/` | firmware di prova del display (geometria, colori, orientamento) |
-| `firmware/morseos/` | MorseOS: quadrante, input Morse, menu, FitPro su UART |
+| `firmware/morseos/` | MorseOS: core, librerie e app a moduli, manifest `bundle.ini` |
+| `firmware/tools/bundle.py` | risolutore del manifest MorseOS e report delle dimensioni |
 | `firmware/build.sh`, `firmware/telink_fw.py` | build in Docker e post-processing dell'immagine (padding, `5D 02`, CRC32) |
 | `files/apk/` | APK FitPro e decompilato jadx (esclusi da git, vedi sotto) |
 | `files/firmware/` | dump della flash e immagini (esclusi da git) |

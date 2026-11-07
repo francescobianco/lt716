@@ -37,3 +37,4 @@ files/firmware/
 firmware/vendor/
 firmware/*/_build/
 __pycache__/
+firmware/*/_gen/

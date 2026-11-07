@@ -56,6 +56,16 @@ void battery_update(void) {
     charger_mv = sample(PIN_CHARGER) * 8;
 }
 
+void battery_poll(void) {
+    static u32 t_last;
+    static int started;
+    if (!started || clock_time_exceed(t_last, 30 * 1000 * 1000)) {
+        started = 1;
+        t_last = clock_time();
+        battery_update();
+    }
+}
+
 u32 battery_mv(void) { return vbat_mv; }
 
 int battery_level(void) {

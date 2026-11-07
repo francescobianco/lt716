@@ -13,6 +13,7 @@
 
 #include <stack/ble/ble.h>
 #include "tl_common.h"
+#include "bundle.h"
 
 typedef enum {
     DH_ATT_H_START = 0,
@@ -42,24 +43,37 @@ typedef enum {
     DH_DUMP_DATA_DP_H,
     DH_DUMP_DATA_CCB_H,
 
+#ifdef MOS_HAVE_FITPRO
     DH_NUS_PS_H,
     DH_NUS_RX_CD_H,
     DH_NUS_RX_DP_H,
     DH_NUS_TX_CD_H,
     DH_NUS_TX_DP_H,
     DH_NUS_TX_CCB_H,
+#endif
 
+#ifdef MOS_HAVE_BATTERY
     DH_BATT_PS_H,
     DH_BATT_LEVEL_CD_H,
     DH_BATT_LEVEL_DP_H,
     DH_BATT_LEVEL_CCB_H,
+#endif
+
+    DH_DEVINFO_PS_H,
+    DH_DEVINFO_PNP_CD_H,
+    DH_DEVINFO_PNP_DP_H,
+
 
     DH_ATT_END_H,
 } DH_ATT_HANDLE;
 
 const u16 dump_data_handle = DH_DUMP_DATA_DP_H;
+#ifdef MOS_HAVE_FITPRO
 const u16 nus_tx_handle = DH_NUS_TX_DP_H;
+#endif
+#ifdef MOS_HAVE_BATTERY
 const u16 batt_level_handle = DH_BATT_LEVEL_DP_H;
+#endif
 
 typedef struct {
     u16 intervalMin;
@@ -102,6 +116,7 @@ static u8 my_DumpData[20];
 static u8 my_DumpDataCCC[2];
 
 extern int dump_onWrite(rf_packet_att_write_t *p);
+#ifdef MOS_HAVE_FITPRO
 extern int fitpro_on_write(rf_packet_att_write_t *p);
 
 /* FitPro UART (Nordic UART UUIDs), little-endian (first byte 0x9d!): 6e40000x-b5a3-f393-e0a9-e50e24dcca9d */
@@ -119,6 +134,17 @@ static const u8 my_NusTxCharVal[19] = {
     CHAR_PROP_NOTIFY, U16_LO(DH_NUS_TX_DP_H), U16_HI(DH_NUS_TX_DP_H),
     0x9d, 0xca, 0xdc, 0x24, 0x0e, 0xe5, 0xa9, 0xe0, 0x93, 0xf3, 0xa3, 0xb5, 0x03, 0x00, 0x40, 0x6e};
 
+#endif
+
+/* Device information: PnP ID (HOGP hosts read it) */
+static const u16 my_devServiceUUID = SERVICE_UUID_DEVICE_INFORMATION;
+static const u16 my_PnPUUID = CHARACTERISTIC_UUID_PNP_ID;
+static const u8 my_PnP[7] = {0x02, 0x8a, 0x24, 0x66, 0x82, 0x04, 0x00};
+static const u8 my_PnPCharVal[5] = {
+    CHAR_PROP_READ, U16_LO(DH_DEVINFO_PNP_DP_H), U16_HI(DH_DEVINFO_PNP_DP_H),
+    U16_LO(CHARACTERISTIC_UUID_PNP_ID), U16_HI(CHARACTERISTIC_UUID_PNP_ID)};
+
+#ifdef MOS_HAVE_BATTERY
 /* Battery service */
 static const u16 my_batServiceUUID = SERVICE_UUID_BATTERY;
 static const u16 my_batCharUUID = CHARACTERISTIC_UUID_BATTERY_LEVEL;
@@ -155,6 +181,8 @@ static const u8 my_DumpDataCharVal[19] = {
     U16_LO(DH_DUMP_DATA_DP_H), U16_HI(DH_DUMP_DATA_DP_H),
     0x02, 0, 0, 0, 0, 0, 0, 0x50, 0x4d, 0x55, 0x44, 0x36, 0x31, 0x37, 0x54, 0x4c};
 
+#endif
+
 const attribute_t my_Attributes[] = {
     {DH_ATT_END_H - 1, 0, 0, 0, 0, 0},  // total number of attributes
 
@@ -187,6 +215,7 @@ const attribute_t my_Attributes[] = {
     {0, ATT_PERMISSIONS_READ, 16, sizeof(my_DumpData), (u8 *)(&my_DumpDataUUID), (u8 *)(my_DumpData), 0},
     {0, ATT_PERMISSIONS_RDWR, 2, sizeof(my_DumpDataCCC), (u8 *)(&clientCharacterCfgUUID), (u8 *)(my_DumpDataCCC), 0},
 
+#ifdef MOS_HAVE_FITPRO
     // FitPro UART
     {6, ATT_PERMISSIONS_READ, 2, 16, (u8 *)(&my_primaryServiceUUID), (u8 *)(&my_NusServiceUUID), 0},
     {0, ATT_PERMISSIONS_READ, 2, sizeof(my_NusRxCharVal), (u8 *)(&my_characterUUID), (u8 *)(my_NusRxCharVal), 0},
@@ -195,11 +224,22 @@ const attribute_t my_Attributes[] = {
     {0, ATT_PERMISSIONS_READ, 16, sizeof(my_NusTx), (u8 *)(&my_NusTxUUID), (u8 *)(my_NusTx), 0},
     {0, ATT_PERMISSIONS_RDWR, 2, sizeof(my_NusTxCCC), (u8 *)(&clientCharacterCfgUUID), (u8 *)(my_NusTxCCC), 0},
 
+#endif
+
+#ifdef MOS_HAVE_BATTERY
     // Battery
     {4, ATT_PERMISSIONS_READ, 2, 2, (u8 *)(&my_primaryServiceUUID), (u8 *)(&my_batServiceUUID), 0},
     {0, ATT_PERMISSIONS_READ, 2, sizeof(my_batCharVal), (u8 *)(&my_characterUUID), (u8 *)(my_batCharVal), 0},
     {0, ATT_PERMISSIONS_READ, 2, sizeof(my_batVal), (u8 *)(&my_batCharUUID), (u8 *)(my_batVal), 0},
     {0, ATT_PERMISSIONS_RDWR, 2, sizeof(my_batCCC), (u8 *)(&clientCharacterCfgUUID), (u8 *)(my_batCCC), 0},
+
+#endif
+
+    // Device information
+    {3, ATT_PERMISSIONS_READ, 2, 2, (u8 *)(&my_primaryServiceUUID), (u8 *)(&my_devServiceUUID), 0},
+    {0, ATT_PERMISSIONS_READ, 2, sizeof(my_PnPCharVal), (u8 *)(&my_characterUUID), (u8 *)(my_PnPCharVal), 0},
+    {0, ATT_PERMISSIONS_READ, 2, sizeof(my_PnP), (u8 *)(&my_PnPUUID), (u8 *)(my_PnP), 0},
+
 };
 
 void my_att_init(void) { bls_att_setAttributeTable((u8 *)my_Attributes); }

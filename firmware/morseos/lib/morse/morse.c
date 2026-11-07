@@ -29,7 +29,8 @@ static const char *const table[] = {
     "K-.-", "L.-..", "M--", "N-.", "O---", "P.--.", "Q--.-", "R.-.", "S...", "T-",
     "U..-", "V...-", "W.--", "X-..-", "Y-.--", "Z--..",
     "0-----", "1.----", "2..---", "3...--", "4....-", "5.....", "6-....", "7--...",
-    "8---..", "9----.", 0,
+    "8---..", "9----.",
+    "_..--", "~.-.-", "<----", 0,
 };
 
 static const morse_cb_t *cb;
@@ -77,6 +78,13 @@ void morse_reset(void) {
     if (cb->word) cb->word(word);
 }
 
+const char *morse_code_of(char c) {
+    int i;
+    for (i = 0; table[i]; i++)
+        if (table[i][0] == c) return table[i] + 1;
+    return 0;
+}
+
 u32 morse_dot_ms(void) { return dot_ms; }
 u32 morse_dash_ms(void) { return dash_ms; }
 
@@ -106,6 +114,7 @@ static void end_letter(void) {
     pattern[0] = 0;
     if (cb->pattern) cb->pattern(pattern);
     if (cb->word) cb->word(word);
+    if (cb->letter) cb->letter(c);
     if (ends_with_access()) {
         send('W', (const u8 *)word, nword);
         morse_reset();
