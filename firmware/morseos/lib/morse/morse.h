@@ -13,17 +13,20 @@
 
 typedef struct {
     void (*notify)(const u8 *pkt, int len); /* 20-byte DATA notification (touchlog) */
-    void (*pattern)(const char *pat);       /* elements of the letter being typed */
+    void (*pattern)(const char *pat);       /* letter being typed; '*' / '=' = element being
+                                               pressed, still a dot / already a dash */
     void (*word)(const char *word);         /* letters so far ("" = cleared) */
     void (*access)(void);                   /* the word ends with MORSE_ACCESS_WORD */
     void (*letter)(char c);                 /* every decoded letter, incl. the specials */
+    void (*erased)(void);                   /* a burst of 6 dots cleared the input */
 } morse_cb_t;
 
 void morse_init(const morse_cb_t *cb);
 void morse_reset(void);       /* forget the current letter and word */
 void morse_poll(int touched); /* call on every main-loop pass with the key level */
 const char *morse_code_of(char c); /* ".-" for A, 0 if unknown */
-u32  morse_dot_ms(void);
-u32  morse_dash_ms(void);
+void morse_set_speed(int level);  /* 1 = very slow .. 16 = very fast, default 9 */
+int  morse_speed(void);
+u32  morse_threshold_ms(void);    /* presses shorter than this are dots */
 
 #endif

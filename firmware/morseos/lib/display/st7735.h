@@ -41,6 +41,8 @@ extern lcd_cfg_t lcd;
 void lcd_init(void);           /* reset + init sequence + apply lcd */
 void lcd_apply(void);          /* MADCTL and inversion from lcd */
 void lcd_backlight(int on);
+void lcd_sleep(int sleep);     /* SLPIN / SLPOUT: the panel keeps its image (and accepts
+                                  memory writes) while asleep, at a few uA */
 void lcd_fill(int x, int y, int w, int h, u16 color);
 
 #endif

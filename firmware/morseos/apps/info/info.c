@@ -24,11 +24,26 @@ static void draw(void) {
     line(0, "MORSEOS " MOS_VERSION, 0, 0);
     line(2, "BAT ", battery_mv(), "MV");
     line(3, battery_charging() ? "CARICA " : "LIV ", battery_level(), "%");
-    line(4, mos_connected() ? "BT ON" : "BT OFF", 0, 0);
+    if (mos_connected()) {
+        char t[20], *p = t;
+        const char *w = mos_peer()[0] ? mos_peer() : "BT";
+        int r = mos_rssi();
+        while (*w) *p++ = *w++;
+        *p++ = ' ';
+        *p++ = '-';
+        p = mos_num(p, r < 0 ? -r : r, 1);
+        *p++ = 'D';
+        *p++ = 'B';
+        *p++ = 'M';
+        *p = 0;
+        line(4, t, 0, 0);
+    } else {
+        line(4, "BT OFF", 0, 0);
+    }
     line(5, "ACCESO ", up / 3600, "H");
     line(6, "       ", up / 60 % 60, "M");
-    line(8, "PUNTO ", morse_dot_ms(), "MS");
-    line(9, "LINEA ", morse_dash_ms(), "MS");
+    line(8, "VELOCITA ", morse_speed(), "/16");
+    line(9, "PUNTO < ", morse_threshold_ms(), "MS");
     line(11, rtc_is_set() ? "ORA OK" : "ORA DA FARE", 0, 0);
 }
 

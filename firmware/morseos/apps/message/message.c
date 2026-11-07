@@ -31,8 +31,8 @@ void message_show(const char *t) {
     int i;
     for (i = 0; t[i] && i < (int)sizeof(text) - 1; i++) text[i] = t[i];
     text[i] = 0;
+    mos_open(&app_message);  /* drawn first (in the dark if the screen is off), then lit */
     mos_wake();
-    mos_open(&app_message);
     mos_buzz(150);
     sleep_us(120 * 1000);
     mos_buzz(150);

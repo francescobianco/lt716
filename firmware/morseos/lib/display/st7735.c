@@ -41,6 +41,14 @@ static void out_pin(u32 pin, int level) {
 
 void lcd_backlight(int on) { gpio_write(LCD_BL, on ? 1 : 0); }
 
+void lcd_sleep(int sleep) {
+    static int asleep;
+    if (sleep == asleep) return;
+    asleep = sleep;
+    cmd_args(sleep ? 0x10 : 0x11, 0, 0);   /* SLPIN / SLPOUT */
+    sleep_us((sleep ? 5 : 10) * 1000);     /* SLPOUT: oscillator and boosters back */
+}
+
 void lcd_apply(void) {
     u8 m = lcd.madctl;
     cmd_args(0x36, &m, 1);                      /* MADCTL */

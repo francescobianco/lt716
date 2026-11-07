@@ -24,7 +24,8 @@ typedef struct {
     const char *label;
     const mos_app_t *app;  /* when it opens an app */
     const char *submenu;   /* when it opens a submenu ("MENU" = main menu) */
-    u8 home;               /* TORNA */
+    u8 home;               /* back to the watch face */
+    u8 back;               /* drawn as a back arrow instead of its label */
 } item_t;
 
 static void (*buzz_cb)(int ms);
@@ -35,7 +36,8 @@ static const char *menu_name = "MENU";
 static const char *app_menu = "MENU";  /* menu the active app was opened from */
 static item_t items[MAX_ITEMS];
 static int n_items, menu_top;
-static int screen_on = 1, pressed, consumed, long_fired, connected;
+static int screen_on = 1, pressed, consumed, long_fired, connected, rssi_dbm = -127;
+static char peer[4];
 static u32 t_press, t_activity;
 static int gauge_fill;  /* pixels of the menu gauge drawn so far */
 
@@ -47,7 +49,33 @@ static int str_eq(const char *a, const char *b) {
 u32 mos_ms_since(u32 t) { return (clock_time() - t) / (sys_tick_per_us * 1000); }
 void mos_buzz(int ms) { if (buzz_cb) buzz_cb(ms); }
 void mos_notify(const u8 *pkt, int len) { if (notify_cb) notify_cb(pkt, len); }
-void mos_set_connected(int on) { connected = on; }
+void mos_set_connected(int on) {
+    connected = on;
+    if (!on) peer[0] = 0;
+}
+
+void mos_set_peer(const char *name) {
+    int n = 0;
+    for (; name && *name && n < 3; name++) {
+        char c = *name;
+        if (c >= 'a' && c <= 'z') c -= 32;
+        if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) peer[n++] = c;
+    }
+    peer[n] = 0;
+}
+
+const char *mos_peer(void) { return peer; }
+void mos_set_rssi(int dbm) { rssi_dbm = dbm; }
+int  mos_rssi(void) { return rssi_dbm; }
+
+int mos_signal_bars(void) {
+    if (!connected) return 0;
+    if (rssi_dbm >= -60) return 4;
+    if (rssi_dbm >= -70) return 3;
+    if (rssi_dbm >= -80) return 2;
+    if (rssi_dbm >= -90) return 1;
+    return 0;
+}
 int  mos_connected(void) { return connected; }
 u32  mos_press_ms(void) { return pressed ? mos_ms_since(t_press) : 0; }
 int  mos_screen_on(void) { return screen_on; }
@@ -69,23 +97,25 @@ void mos_center_text(int y, const char *s, int scale, u16 fg) {
     font_text((lcd.width - font_width(s, scale)) / 2, y, s, scale, fg, C_BLACK);
 }
 
+/* '.' dot, '-' dash in col; '*' / '=' the element being pressed (tutor), in white */
 void mos_pattern_at(int y, const char *pat, u16 col, int centered) {
     int x = 4, w = 0;
     const char *q;
     if (centered) {
-        for (q = pat; *q; q++) w += (*q == '.' ? 4 : 12) + 3;
+        for (q = pat; *q; q++) w += (*q == '.' || *q == '*' ? 5 : 12) + 3;
         x = (lcd.width - w + 3) / 2;
     }
-    lcd_fill(0, y, lcd.width, 6, C_BLACK);
+    lcd_fill(0, y, lcd.width, 8, C_BLACK);
     for (; *pat; pat++) {
-        int ew = *pat == '.' ? 4 : 12;
-        lcd_fill(x, y + 1, ew, 4, col);
+        int live = *pat == '*' || *pat == '=';
+        int ew = *pat == '.' || *pat == '*' ? 5 : 12;
+        lcd_fill(x, y + 1, ew, 6, live ? C_WHITE : col);
         x += ew + 3;
     }
 }
 
 static void touch_mark(int on) {
-    if (screen_on) lcd_fill(lcd.width / 2 - 4, lcd.height - 7, 8, 5, on ? C_YELLOW : C_GREY);
+    lcd_fill(lcd.width / 2 - 4, lcd.height - 7, 8, 5, on ? C_YELLOW : C_GREY);
 }
 
 /* ------------------------------------------------------------------ menus */
@@ -96,7 +126,13 @@ static void add_item(const char *label, const mos_app_t *app, const char *submen
     items[n_items].app = app;
     items[n_items].submenu = submenu;
     items[n_items].home = home;
+    items[n_items].back = 0;
     n_items++;
+}
+
+static void add_back(const char *submenu, int home) {
+    add_item("", 0, submenu, home);
+    if (n_items) items[n_items - 1].back = 1;
 }
 
 static void build_menu(const char *name) {
@@ -114,13 +150,21 @@ static void build_menu(const char *name) {
                 if (str_eq(mos_entries[j].menu, m)) seen = 1;
             if (!seen) add_item(m, 0, m, 0);
         }
-        add_item("TORNA", 0, 0, 1);
+        add_back(0, 1);            /* to the watch face */
     } else {
-        add_item("INDIETRO", 0, "MENU", 0);
+        add_back("MENU", 0);       /* to the main menu */
     }
 }
 
-static void draw_box(int y, const char *label, int selected) {
+/* back arrow, 32 x 23 px, centred on (cx, cy): triangle head pointing left + shaft */
+static void draw_back_arrow(int cx, int cy, u16 c) {
+    int x0 = cx - 16, i;
+    for (i = 0; i < 12; i++) lcd_fill(x0 + i, cy - i, 1, 2 * i + 1, c);
+    lcd_fill(x0 + 12, cy - 3, 20, 7, c);
+}
+
+static void draw_box(int y, const item_t *it, int selected) {
+    const char *label = it->label;
     u16 c = selected ? C_WHITE : C_GREY;
     int x = 4, w = 72, h = 66, t = selected ? 2 : 1, sc;
     lcd_fill(x, y, w, h, C_BLACK);
@@ -128,6 +172,10 @@ static void draw_box(int y, const char *label, int selected) {
     lcd_fill(x, y + h - t, w, t, c);
     lcd_fill(x, y, t, h, c);
     lcd_fill(x + w - t, y, t, h, c);
+    if (it->back) {
+        draw_back_arrow(x + w / 2, y + h / 2 - 2, c);
+        return;
+    }
     sc = font_width(label, 2) <= w - 6 ? 2 : 1;
     font_text(x + (w - font_width(label, sc)) / 2, y + (h - 8 * sc) / 2, label, sc, c, C_BLACK);
 }
@@ -143,8 +191,8 @@ static void draw_gauge(int fill) {
 static void draw_menu(void) {
     gauge_fill = 0;
     lcd_fill(0, 0, lcd.width, lcd.height, C_BLACK);
-    draw_box(8, items[menu_top].label, 1);
-    if (n_items > 1) draw_box(80, items[(menu_top + 1) % n_items].label, 0);
+    draw_box(8, &items[menu_top], 1);
+    if (n_items > 1) draw_box(80, &items[(menu_top + 1) % n_items], 0);
     touch_mark(pressed);
 }
 
@@ -161,7 +209,6 @@ static void menu_select(void) {
 /* ------------------------------------------------------------------ navigation */
 
 void mos_redraw(void) {
-    if (!screen_on) return;
     if (in_menu) draw_menu();
     else if (active && active->draw) {
         active->draw();
@@ -193,11 +240,12 @@ void mos_menu(const char *name) {
 
 void mos_back(void) { mos_menu(app_menu); }
 
+/* the image is always up to date (drawn even in the dark): waking is just the backlight */
 void mos_wake(void) {
     if (!screen_on) {
         screen_on = 1;
+        lcd_sleep(0);
         lcd_backlight(1);
-        mos_redraw();
     }
     t_activity = clock_time();
 }
@@ -205,28 +253,37 @@ void mos_wake(void) {
 static void sleep_screen(void) {
     screen_on = 0;
     lcd_backlight(0);
-    in_menu = 0;
-    active = home_app;
     app_menu = "MENU";
-    morse_reset();
-    if (home_app && home_app->enter) home_app->enter();
+    if (home_app) mos_open(home_app);  /* drawn now, in the dark, ready for the next wake */
+    else mos_menu("MENU");
+    lcd_sleep(1);                      /* panel asleep, image kept */
 }
 
-void mos_emergency_warning(int on) {
-    if (!on) {
+static void red_line(int y, const char *s, u16 col) {
+    font_text((lcd.width - font_width(s, 1)) / 2, y, s, 1, col, C_RED);
+}
+
+/* stage 0 = gone (redraw), 1 = key still held, 2 = released: taps counted so far */
+void mos_emergency_warning(int stage, int taps) {
+    if (!stage) {
         mos_redraw();
         return;
     }
-    if (!screen_on) {
-        screen_on = 1;
-        lcd_backlight(1);
+    if (stage == 1) {
+        lcd_fill(0, 0, lcd.width, lcd.height, C_RED);
+        red_line(40, "AGGIORNAMENTO", C_WHITE);
+        red_line(64, "RILASCIA", C_YELLOW);
+        red_line(76, "E TOCCA", C_YELLOW);
+        red_line(88, "3 VOLTE", C_YELLOW);
+        red_line(120, "ALTRO:", C_WHITE);
+        red_line(132, "ANNULLA", C_WHITE);
+        mos_wake();
+    } else {
+        int i;
+        lcd_fill(0, 100, lcd.width, 12, C_RED);
+        for (i = 0; i < 3; i++)
+            lcd_fill(16 + i * 18, 102, 12, 8, i < taps ? C_WHITE : C_GREY);
     }
-    lcd_fill(0, 0, lcd.width, lcd.height, C_RED);
-    font_text((lcd.width - font_width("RILASCIA", 1)) / 2, 50, "RILASCIA", 1, C_WHITE, C_RED);
-    font_text((lcd.width - font_width("PER", 1)) / 2, 62, "PER", 1, C_WHITE, C_RED);
-    font_text((lcd.width - font_width("ANNULLARE", 1)) / 2, 74, "ANNULLARE", 1, C_WHITE, C_RED);
-    font_text((lcd.width - font_width("TIENI 10S", 1)) / 2, 100, "TIENI 10S", 1, C_YELLOW, C_RED);
-    font_text((lcd.width - font_width("AGGIORNA", 1)) / 2, 112, "AGGIORNA", 1, C_YELLOW, C_RED);
 }
 
 /* ------------------------------------------------------------------ Morse -> active app */
@@ -234,10 +291,10 @@ void mos_emergency_warning(int on) {
 static int morse_target(void) { return !in_menu && active && (active->flags & MOS_F_MORSE); }
 
 static void m_pattern(const char *p) {
-    if (screen_on && morse_target() && active->pattern) active->pattern(p);
+    if (morse_target() && active->pattern) active->pattern(p);
 }
 static void m_word(const char *w) {
-    if (screen_on && morse_target() && active->word) active->word(w);
+    if (morse_target() && active->word) active->word(w);
 }
 static void m_access(void) {
     if (morse_target() && active->access) active->access();
@@ -246,7 +303,14 @@ static void m_letter(char c) {
     if (morse_target() && active->letter) active->letter(c);
 }
 
-static morse_cb_t morse_cb = {0, m_pattern, m_word, m_access, m_letter};
+static void m_erased(void) {
+    if (!screen_on || !morse_target()) return;
+    mos_buzz(25);
+    sleep_us(60 * 1000);
+    mos_buzz(25);
+}
+
+static morse_cb_t morse_cb = {0, m_pattern, m_word, m_access, m_letter, m_erased};
 
 /* ------------------------------------------------------------------ init / poll */
 
@@ -273,10 +337,9 @@ void mos_poll(int touched) {
         if (touched) {
             t_press = clock_time();
             long_fired = consumed = 0;
-            if (!screen_on) {                       /* this touch only wakes the home screen */
-                screen_on = 1;
-                lcd_backlight(1);
-                if (home_app) mos_open(home_app);
+            if (!screen_on) {                       /* this touch only wakes the home screen, */
+                touch_mark(1);                      /* already drawn: just the backlight */
+                mos_wake();
                 consumed = 1;
             }
         } else if (!consumed) {
@@ -320,7 +383,8 @@ void mos_poll(int touched) {
 
     morse_poll(screen_on && morse_target() && !consumed ? touched : 0);
 
-    if (screen_on && !in_menu && active && active->tick) active->tick();
+    /* the home screen keeps itself up to date in the dark too */
+    if (!in_menu && active && active->tick && (screen_on || active == home_app)) active->tick();
 
     if (screen_on && !pressed) {
         u32 limit = 1000 * (u32)((!in_menu && active && active->timeout_s) ? active->timeout_s

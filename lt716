@@ -33,7 +33,7 @@ Usage:
                                      --yes it only checks the image and builds the packets
   ./lt716 ota --enter-updater        start an OTA without data: the stock firmware reboots
                                      into the vendor updater (bank 0x20000) after ~40 s
-  ./lt716 dumper info|dump [file]|assets <src.bin>|touchlog [s]|lcd ...|updater|reboot
+  ./lt716 dumper info|dump [file]|assets <src.bin>|touchlog [s]|speed <1..16>|battery|sensors|lcd ...|updater|reboot
                                      talk to the flash dumper (firmware/dumper) once it runs
   ./lt716 reset --yes                factory reset (1D)
   ./lt716 raw <hex> [<hex>...]       send raw packets to the UART and print the replies
@@ -932,6 +932,59 @@ def main(argv):
             if i["version"] < 2:
                 die("this dumper cannot write: install dumper v2 first")
             write_assets(b, args[1], cur, os.path.join(fw, "LT716_flash_after_assets.bin"))
+        elif sub == "battery":
+            # MorseOS: battery mV, gauge, charger, and the band's clock against this PC
+            got = []
+            dumper_listen(b, lambda v: got.append(v) if v[:5] == b"\xfe\xff\xff\xffB" else None)
+            b.char(DUMP_CMD).WriteValue(dbus.Array(b"\x31", signature="y"), {"type": "request"})
+            b.run(5, until=lambda p: bool(got))
+            if not got:
+                die("no battery reply (MorseOS 0.5.4+ needed)")
+            v = got[0]
+            now = datetime.datetime.now()
+            print(f"battery {int.from_bytes(v[5:7], 'little')} mV  gauge {v[7]}%"
+                  f"{'  charging' if v[8] else ''}")
+            if v[9]:
+                band = now.replace(hour=v[10], minute=v[11], second=v[12])
+                drift = (band - now).total_seconds()
+                print(f"band clock {v[10]:02d}:{v[11]:02d}:{v[12]:02d} (day {v[13]})  "
+                      f"PC {now:%H:%M:%S}  drift {drift:+.0f} s")
+            else:
+                print("band clock not set")
+        elif sub == "sensors":
+            # MorseOS: find the I2C devices on PA3 / PA4 / PC4 / PC7
+            pins = ["PA3", "PA4", "PC4", "PC7"]
+            guess = {(0x44, 0x21): "HRS3300 heart rate", (0x18, 0x11): "SC7A20 accel",
+                     (0x19, 0x11): "SC7A20 accel", (0x18, 0x33): "LIS3DH accel",
+                     (0x19, 0x33): "LIS3DH accel", (0x0F, 0x23): "STK8321 accel",
+                     (0x1F, 0x23): "STK8321 accel", (0x0F, 0x35): "KXTJ3 accel",
+                     (0x26, 0x13): "DA213 accel", (0x27, 0x13): "DA213 accel",
+                     (0x12, 0xE7): "QMA7981 accel", (0x13, 0xE7): "QMA7981 accel"}
+            got = []
+            dumper_listen(b, lambda v: got.append(v) if v[:5] == b"\xfe\xff\xff\xffI" else None)
+            b.char(DUMP_CMD).WriteValue(dbus.Array(b"\x32", signature="y"), {"type": "request"})
+            b.run(10, until=lambda p: any(v[5] == 0xFF for v in got))
+            end = [v for v in got if v[5] == 0xFF]
+            if not end:
+                die("no answer (MorseOS 0.5.4+ with the i2cprobe module needed)")
+            busy = end[0][12]
+            if busy:
+                print("held low at rest (skipped): " + " ".join(p for i, p in enumerate(pins) if busy >> i & 1))
+            hits = sorted((v for v in got if v[5] != 0xFF), key=lambda v: v[5])
+            if not hits:
+                print("no I2C device answered on PA3/PA4/PC4")
+            for v in hits:
+                sda, scl, addr, reg, ident = v[7], v[8], v[9], v[10], v[11]
+                idtxt = f"reg {reg:#04x} = {ident:#04x}" if reg != 0xFF else "ID not readable"
+                print(f"SDA {pins[sda]}  SCL {pins[scl]}  address {addr:#04x}  {idtxt}  "
+                      f"{guess.get((addr, ident), '') if reg != 0xFF else ''}")
+        elif sub == "speed":
+            # MorseOS: input speed 1 (very slow) .. 16 (very fast)
+            if len(args) < 2 or not args[1].isdigit() or not 1 <= int(args[1]) <= 16:
+                die("usage: lt716 dumper speed <1..16>", 2)
+            b.char(DUMP_CMD).WriteValue(dbus.Array(bytes([0x30, int(args[1])]), signature="y"),
+                                        {"type": "request"})
+            print(f"Morse speed {args[1]}/16")
         elif sub == "touchlog":
             # MorseOS: print every press, letter and word the band decodes
             def on_ev(v):
@@ -940,12 +993,14 @@ def main(argv):
                 now = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
                 k = chr(v[4])
                 if k == "T":
-                    press, gap, dot, dash = (int.from_bytes(v[i:i + 2], "little") for i in (6, 8, 10, 12))
+                    press, gap, thr = (int.from_bytes(v[i:i + 2], "little") for i in (6, 8, 10))
                     print(f"{now}  {chr(v[5])}  press {press:4d} ms  gap {gap:5d} ms  "
-                          f"avg dot {dot} ms  dash {dash} ms")
+                          f"(dot < {thr} ms, speed {v[12]})")
                 elif k == "L":
                     pat = bytes(x for x in v[6:] if x in b".-").decode()
                     print(f"{now}  letter {chr(v[5])}  ({pat})")
+                elif k == "S":
+                    print(f"{now}  KEY STUCK (down > 30 s): ignored until released")
                 elif k == "W":
                     print(f"{now}  WORD {bytes(x for x in v[5:] if x).decode(errors='replace')}")
                 sys.stdout.flush()

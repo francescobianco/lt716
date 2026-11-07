@@ -54,6 +54,11 @@ void mos_init(void (*buzz)(int ms), void (*notify)(const u8 *pkt, int len));
 void mos_poll(int touched);
 void mos_set_connected(int on);
 int  mos_connected(void);
+void mos_set_peer(const char *name);  /* remote device name (GAP 0x2A00), 0 = unknown */
+const char *mos_peer(void);           /* its first 3 letters, upper case, "" = unknown */
+void mos_set_rssi(int dbm);
+int  mos_rssi(void);                  /* dBm of the link */
+int  mos_signal_bars(void);           /* 0..4 */
 void mos_buzz(int ms);
 void mos_notify(const u8 *pkt, int len);
 u32  mos_press_ms(void);
@@ -66,11 +71,12 @@ void mos_menu(const char *name);  /* "MENU" or a submenu name */
 void mos_back(void);              /* the menu the active app was opened from */
 int  mos_active(const mos_app_t *app);
 
-/* screen */
+/* screen: drawing works with the screen off too (the panel keeps the image, only the
+ * backlight is off), so apps can prepare their screen in the dark and appear at once */
 int  mos_screen_on(void);
 void mos_wake(void);
 void mos_redraw(void);
-void mos_emergency_warning(int on);
+void mos_emergency_warning(int stage, int taps);  /* 0 off, 1 held, 2 counting taps */
 
 /* drawing helpers */
 char *mos_num(char *p, u32 v, int width);  /* decimal, zero-padded to width; returns the end */

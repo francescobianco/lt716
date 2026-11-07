@@ -1,4 +1,11 @@
-/* Seconds since 2000-01-01 00:00 (a Saturday), advanced from the system tick. */
+/*
+ * Seconds since 2000-01-01 00:00 (a Saturday), advanced from the system tick.
+ *
+ * Known limit: the system tick stops while the CPU is suspended (screen off), so the clock
+ * falls behind during suspend. Do NOT fix this by calling pm_get_32k_tick() from here: it
+ * waits forever outside the library's own sleep code and froze MorseOS 0.5.5
+ * (see INCIDENTE-0.5.5.md).
+ */
 #include "rtc.h"
 #include "drivers/5316/clock.h"
 

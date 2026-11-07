@@ -94,7 +94,7 @@ static const u16 serviceChangeUIID      = GATT_UUID_SERVICE_CHANGE;
 static const u16 userdesc_UUID          = GATT_UUID_CHAR_USER_DESC;
 
 static u16 my_appearance = GAP_APPEARE_UNKNOWN;
-static gap_periConnectParams_t my_periConnParameters = {6, 12, 0, 400};
+static gap_periConnectParams_t my_periConnParameters = {24, 40, 4, 400}; /* 30-50 ms, latency 4 */
 static u16 serviceChangeVal[2] = {0};
 static u8 serviceChangeCCC[2] = {0, 0};
 
