@@ -8,7 +8,13 @@
 #include "st7735.h"
 #include "drivers/5316/clock.h"
 
-#define LONG_MS         600
+#define LONG_MS         600   /* apps with MOS_F_LONG */
+#define MENU_SHORT_MS   300   /* menu: a tap shorter than this moves to the next box */
+#define MENU_CONFIRM_MS 800   /* menu: holding this long fills the gauge and opens the box */
+#define GAUGE_X         7     /* gauge along the bottom edge inside the selected box */
+#define GAUGE_Y         (8 + 66 - 7)
+#define GAUGE_W         66
+#define GAUGE_H         4
 #define HOLD_EXIT_MS    3000
 #define DEFAULT_TIMEOUT 30
 #define MAX_ITEMS       12
@@ -31,6 +37,7 @@ static item_t items[MAX_ITEMS];
 static int n_items, menu_top;
 static int screen_on = 1, pressed, consumed, long_fired, connected;
 static u32 t_press, t_activity;
+static int gauge_fill;  /* pixels of the menu gauge drawn so far */
 
 static int str_eq(const char *a, const char *b) {
     while (*a && *a == *b) a++, b++;
@@ -125,7 +132,16 @@ static void draw_box(int y, const char *label, int selected) {
     font_text(x + (w - font_width(label, sc)) / 2, y + (h - 8 * sc) / 2, label, sc, c, C_BLACK);
 }
 
+/* the menu gauge: fill grows while the key is held on the selected box */
+static void draw_gauge(int fill) {
+    if (fill > GAUGE_W) fill = GAUGE_W;
+    if (fill > gauge_fill) lcd_fill(GAUGE_X + gauge_fill, GAUGE_Y, fill - gauge_fill, GAUGE_H, C_GREEN);
+    else if (fill < gauge_fill) lcd_fill(GAUGE_X + fill, GAUGE_Y, gauge_fill - fill, GAUGE_H, C_BLACK);
+    gauge_fill = fill;
+}
+
 static void draw_menu(void) {
+    gauge_fill = 0;
     lcd_fill(0, 0, lcd.width, lcd.height, C_BLACK);
     draw_box(8, items[menu_top].label, 1);
     if (n_items > 1) draw_box(80, items[(menu_top + 1) % n_items].label, 0);
@@ -265,10 +281,11 @@ void mos_poll(int touched) {
             }
         } else if (!consumed) {
             if (in_menu) {
-                if (long_fired) menu_select();
-                else if (n_items) {
-                    menu_top = (menu_top + 1) % n_items;
+                if (mos_ms_since(t_press) < MENU_SHORT_MS && n_items) {
+                    menu_top = (menu_top + 1) % n_items;  /* tap: next box */
                     draw_menu();
+                } else {
+                    draw_gauge(0);                        /* let go too early: reset */
                 }
             } else if (active && active->key) {
                 active->key(long_fired ? MOS_KEY_LONG : MOS_KEY_SHORT);
@@ -277,7 +294,17 @@ void mos_poll(int touched) {
         touch_mark(touched);
     }
 
-    if (pressed && !consumed) {
+    if (pressed && !consumed && in_menu && screen_on) {
+        u32 held = mos_ms_since(t_press);
+        if (held >= MENU_CONFIRM_MS) {                    /* gauge full: open it now */
+            draw_gauge(GAUGE_W);
+            consumed = 1;
+            mos_buzz(40);
+            menu_select();
+        } else if (held >= MENU_SHORT_MS) {
+            draw_gauge((held - MENU_SHORT_MS) * GAUGE_W / (MENU_CONFIRM_MS - MENU_SHORT_MS));
+        }
+    } else if (pressed && !consumed) {
         u32 held = mos_ms_since(t_press);
         if (!long_fired && (flags & MOS_F_LONG) && held > LONG_MS) {
             long_fired = 1;

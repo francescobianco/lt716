@@ -2,6 +2,18 @@
 
 Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌 in coda, 💤 più avanti.
 
+## Paradigmi di UI (da riusare)
+
+- **Tieni premuto per confermare, con barra di carica sul bersaglio** (0.5.1): mentre il tasto è
+  premuto, lungo il bordo basso dell'elemento a fuoco si riempie una barra verde; piena = azione
+  eseguita subito (con una vibrazione breve), rilascio prima = barra azzerata e nessuna azione.
+  Solo un tocco davvero breve (< 0,3 s) fa l'azione "leggera" (es. passare al box successivo).
+  Dà il senso che la pressione sta agendo proprio su quel bersaglio. Da usare per ogni
+  conferma: aprire una voce, giocare una mossa a scacchi, disconnettere il Bluetooth, cancellare.
+- **Il tocco che sveglia lo schermo non conta**: mostra solo il quadrante.
+- **Uscita da uno strumento**: tenere premuto 3 s, con vibrazione.
+- **Emergenza**: 10 s avviso rosso "RILASCIA PER ANNULLARE", 20 s azione.
+
 ## Fatto
 
 - ✅ **Input Morse sul tasto touch** (0.1–0.2): decodificatore adattivo (medie separate di
