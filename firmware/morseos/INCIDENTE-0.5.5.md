@@ -80,6 +80,35 @@ Recuperabile via SWire (Blue Pill con USB2Swire, procedura in
 `firmware/vendor/FitPro-LT715-TLSR8232/docs/flashing.md`). Backup completo della sua flash in
 `files/firmware/LT716_flash.bin` e successivi.
 
+## Recupero (2026-11-16)
+
+Fatto via SWire, **senza Blue Pill**, con un programmatore ESP-01 a CH340 (3,3 V) e lo
+strumento di pvvx `TLSR826xComFlasher.py` (stesso formato di indirizzo a 16 bit e stessi
+registri del TLSR8232):
+
+- collegamento: resistenza da 1–1,8 kΩ tra i fori RXD e TXD dello zoccolo ESP-01; un filo dal
+  foro TXD al pad **SWS** (sul retro della scheda, lato display, all'estremità arrotondata) più
+  GND; VCC scollegato, band sulla sua batteria. Il loopback del CH340 è pulito fino a 1 Mbaud;
+  lo strumento lavora a 921600;
+- la 0.5.5 non tocca `PC7` all'avvio, quindi il pad SWS rispondeva anche a band bloccata;
+- letture lente (15 s ogni 4 KB) e, con i contatti tenuti a mano, a volte un blocco da 256 byte
+  letto male senza errore: ogni zona è stata letta due volte, e il CRC dell'aggiornatore è
+  stato controllato prima di scrivere;
+- unica scrittura: `00 00 00 00` a `0x8` (programmare bit da 1 a 0 non richiede di cancellare),
+  riletta, poi reset via SWire: la ROM ha avviato l'aggiornatore a `0x20000`;
+- dal dumper, installato via OTA, due dump completi identici in `files/firmware/` (i backup
+  del 6 novembre non c'erano più sul disco).
+
+Le OTA successive fallivano a caso perché la band si resettava sotto il carico della radio
+(batteria scarica). `firmware/battmon`, un micro firmware senza Bluetooth che mostra le
+tensioni sullo schermo e torna da solo all'aggiornatore, compilato con `-Os` (8,6 KB), è
+passato e ha confermato la ricarica.
+
+La **0.5.7** applica la regola 2: watchdog hardware (4 s) armato subito dopo `clock_init()` e
+azzerato solo nel ciclo principale, contatore di riavvii nel registro analogico `0x3c`
+(3 avvii di fila senza 15 s di funzionamento sano → aggiornatore). Prova:
+`lt716 dumper safeguard` e `lt716 dumper hang`.
+
 ## Il doppione in arrivo
 
 Prima di toccarlo: rileggere questo file, implementare e provare il watchdog con il contatore di

@@ -57,6 +57,21 @@
 #define EMERGENCY_ARMED_MS 5000   /* ... with at most this between them */
 #define STUCK_MS           30000  /* a key down this long is ignored until released */
 
+/* Safeguard (0.5.7, after the 0.5.5 incident, see INCIDENTE-0.5.5.md):
+ *  - hardware watchdog, armed right after clock_init() and fed only by the main loop: a hang
+ *    anywhere (main loop or boot) reboots the band after SG_WD_MS;
+ *  - boot counter in an analog register that survives that reboot: SG_LIMIT boots in a row
+ *    without SG_HEALTHY_MS of healthy main loop -> vendor updater, like 05 UPDT.
+ * The counter keeps a signature in the high nibble so a power-on value is not taken for a count.
+ * Fail-safe: a misconfigured watchdog that also fires on a healthy firmware still ends in the
+ * updater after SG_LIMIT boots, never in a lock-up. */
+#define SG_REG         DEEP_ANA_REG2   /* 0x3c: "stable" retention register, unused by the SDK */
+#define SG_MAGIC       0xA0
+#define SG_LIMIT       3
+#define SG_HEALTHY_MS  15000           /* awake time: the system timer stops in suspend */
+#define SG_WD_MS       4000
+#define SG_TICKS_PER_MS 16000          /* SYS_CLK_16M_Crystal */
+
 MYFIFO_INIT(blt_rxfifo, 64, 8);
 MYFIFO_INIT(blt_txfifo, 40, 16);
 
@@ -96,8 +111,29 @@ static volatile u8  battery_pending;    /* command 31: report mV and the band's 
 static volatile u8  probe_pending;      /* command 32: sensor finder */
 static volatile u8  redraw_pending;
 static volatile u8  reinit_pending;
+static volatile u8  sg_status_pending;  /* command 33: safeguard status */
+static volatile u8  hang_pending;       /* command 34 'HANG': test the watchdog */
+static u8 sg_boot;                      /* boots in a row, counting this one */
+static u8 sg_healthy;                   /* the counter was cleared after SG_HEALTHY_MS */
+static u8 sg_rearms;                    /* times the watchdog was found disabled and re-armed */
 static u8 status_pkt[20];
 static int connected;
+
+/* reg_tmr_ctrl: bits 0-8 timers (keep), 9-22 watchdog capture (timeout >> 18), 23 enable;
+ * the top byte is reg_tmr_sta (write 1 to clear), written as 0 here so nothing is cleared */
+static void wd_arm(void) {
+    u32 capt = ((u32)SG_WD_MS * SG_TICKS_PER_MS) >> WATCHDOG_TIMEOUT_COEFF;
+    reg_tmr_sta = FLD_TMR_STA_WD;
+    reg_tmr_ctrl = (reg_tmr_ctrl & 0x1ff) | ((capt & 0x3fff) << 9) | FLD_TMR_WD_EN;
+}
+
+static void wd_feed(void) {
+    if (!(reg_tmr_ctrl & FLD_TMR_WD_EN)) {  /* e.g. reset by the power management on wake-up */
+        if (sg_rearms < 255) sg_rearms++;
+        wd_arm();
+    }
+    reg_tmr_sta = FLD_TMR_STA_WD;
+}
 
 _attribute_ram_code_ void irq_handler(void) { irq_blt_sdk_handler(); }
 
@@ -140,6 +176,12 @@ int dump_onWrite(rf_packet_att_write_t *p) {
         break;
     case 0x31:                                   /* battery mV + band clock */
         battery_pending = 1;
+        break;
+    case 0x33:                                   /* safeguard status */
+        sg_status_pending = 1;
+        break;
+    case 0x34:                                   /* 'HANG': stop the main loop, for the watchdog test */
+        if (len >= 5 && d[1] == 'H' && d[2] == 'A' && d[3] == 'N' && d[4] == 'G') hang_pending = 1;
         break;
     case 0x10:
         fast_link_wanted = 1;
@@ -374,7 +416,21 @@ int main() {
     blc_pm_select_internal_32k_crystal();
     cpu_wakeup_init();
     clock_init(SYS_CLK_16M_Crystal);
+    wd_arm();   /* first: from here on a hang reboots the band */
     gpio_init();
+
+    /* boots in a row without a healthy main loop: at SG_LIMIT go to the vendor updater */
+    {
+        u8 r = analog_read(SG_REG);
+        u8 n = (r & 0xf0) == SG_MAGIC ? (r & 0x0f) : 0;
+        if (n < 15) n++;
+        sg_boot = n;
+        analog_write(SG_REG, SG_MAGIC | n);
+        if (n >= SG_LIMIT) {
+            analog_write(SG_REG, SG_MAGIC);   /* start clean when we come back */
+            enter_updater();                  /* reboots; returns only if refused */
+        }
+    }
 
     gpio_set_func(PIN_MOTOR, AS_GPIO);
     gpio_set_output_en(PIN_MOTOR, 1);
@@ -439,8 +495,19 @@ int main() {
     int emergency_stage = 0;  /* 0 idle, 1 warning while held, 2 released: counting taps */
     int key_prev = 0, stuck = 0, taps = 0;
     u32 t_key = clock_time(), t_armed = 0, key_press_ms = 0;
+    u32 t_boot = clock_time();
     while (1) {
+        wd_feed();   /* only here: a stuck main loop is what the watchdog must catch */
         blt_sdk_main_loop();
+
+        if (!sg_healthy && mos_ms_since(t_boot) > SG_HEALTHY_MS) {
+            sg_healthy = 1;
+            analog_write(SG_REG, SG_MAGIC);   /* healthy: the next boot counts from 1 */
+        }
+        if (hang_pending) {
+            sleep_us(200 * 1000);             /* let the write response go out */
+            while (1) {}                      /* the watchdog must reboot us */
+        }
 
         /* raw touch key, with the stuck-key guard */
         int raw = gpio_read(PIN_TOUCH) ? 1 : 0, t, key_released = 0;
@@ -600,6 +667,23 @@ int main() {
 #endif
             if (bls_att_pushNotifyData(dump_data_handle, pkt, sizeof(pkt)) == BLE_SUCCESS)
                 battery_pending = 0;
+        }
+        if (sg_status_pending) {
+            /* FE FF FF FF 'W' <boot n> <reg now> <wd on> <capt lo> <capt hi> <rearms>
+             * <healthy> <uptime s lo> <uptime s hi> */
+            u8 pkt[20] = {0xFE, 0xFF, 0xFF, 0xFF, 'W'};
+            u32 capt = (reg_tmr_ctrl >> 9) & 0x3fff, up = mos_ms_since(t_boot) / 1000;
+            pkt[5] = sg_boot;
+            pkt[6] = analog_read(SG_REG);
+            pkt[7] = (reg_tmr_ctrl & FLD_TMR_WD_EN) ? 1 : 0;
+            pkt[8] = capt;
+            pkt[9] = capt >> 8;
+            pkt[10] = sg_rearms;
+            pkt[11] = sg_healthy;
+            pkt[12] = up;
+            pkt[13] = up >> 8;
+            if (bls_att_pushNotifyData(dump_data_handle, pkt, sizeof(pkt)) == BLE_SUCCESS)
+                sg_status_pending = 0;
         }
         if (name_req == 1 && mos_ms_since(t_conn) > 2000) ask_central_name();
         if (mos_ms_since(t_rssi) > 1000) {

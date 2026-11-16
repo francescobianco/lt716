@@ -33,7 +33,7 @@ Usage:
                                      --yes it only checks the image and builds the packets
   ./lt716 ota --enter-updater        start an OTA without data: the stock firmware reboots
                                      into the vendor updater (bank 0x20000) after ~40 s
-  ./lt716 dumper info|dump [file]|assets <src.bin>|touchlog [s]|speed <1..16>|battery|sensors|lcd ...|updater|reboot
+  ./lt716 dumper info|dump [file]|assets <src.bin>|touchlog [s]|speed <1..16>|battery|safeguard|hang|sensors|lcd ...|updater|reboot
                                      talk to the flash dumper (firmware/dumper) once it runs
   ./lt716 reset --yes                factory reset (1D)
   ./lt716 raw <hex> [<hex>...]       send raw packets to the UART and print the replies
@@ -462,7 +462,8 @@ def day_names(m):
 
 OTA_CHAR = "00010203-0405-0607-0809-0a0b0c0d2b12"
 OTA_MAX = 0x7C * 1024  # bls_ota_setFirmwareSizeAndOffset(0x7c, 0x20000) in the stock firmware
-OTA_READ_EVERY = 8     # the app reads the OTA characteristic every 8 packets (flow control)
+OTA_READ_EVERY = int(os.environ.get("OTA_READ_EVERY", 8))  # the app reads every 8 packets (flow control); lower = slower, safer
+OTA_SECTOR_PAUSE = float(os.environ.get("OTA_SECTOR_PAUSE", 0))  # s before each 4 KB sector
 OTA_MIN_BATTERY = 50   # the app asks for 30 %, the FitPro manual for 50 %
 
 
@@ -550,6 +551,8 @@ def ota(path, mode):
             tx.WriteValue(dbus.Array(p, signature="y"), {"type": "command"})
             if 2 <= n < len(pkts) - 1 and (n - 1) % OTA_READ_EVERY == 0:
                 tx.ReadValue({})  # wait until the band has caught up
+            if OTA_SECTOR_PAUSE and 2 < n < len(pkts) - 1 and (n - 2) % 256 == 255:
+                time.sleep(OTA_SECTOR_PAUSE)  # next packet starts a new 4 KB flash sector
         except dbus.DBusException as e:
             die(f"\nOTA stopped at packet {n} of {len(pkts)} ({p[:4].hex()}): {e}")
         if 2 <= n < len(pkts) - 1:
@@ -622,24 +625,24 @@ def dump(b, out):
         return True
 
     timer = GLib.timeout_add(1000, progress)
-    request(0, FLASH_SIZE)
-    # wait until the stream stops arriving for 3 s
+    # wait until the stream stops arriving for 3 s, or the link drops
     last = [-1]
 
     def stalled():
-        if len(blocks) == last[0]:
+        if len(blocks) == last[0] or not b.prop("Connected"):
             b.loop.quit()
             return False
         last[0] = len(blocks)
         return True
 
-    GLib.timeout_add(3000, stalled)
-    b.loop.run()
-    for attempt in range(5):
+    # every round asks for what is still missing; a dropped link is reconnected and the dump
+    # goes on from where it stopped (a weak battery drops the link under sustained radio load)
+    for attempt in range(30):
         missing = [a for a in range(0, FLASH_SIZE, 16) if a not in blocks]
         if not missing:
             break
-        print(f"\n{len(missing)} blocks missing, asking again ({attempt + 1}/5)", file=sys.stderr)
+        if attempt:
+            print(f"\n{len(missing)} blocks missing, asking again ({attempt}/29)", file=sys.stderr)
         # coalesce into runs
         runs, start, prev = [], missing[0], missing[0]
         for a in missing[1:]:
@@ -648,11 +651,20 @@ def dump(b, out):
                 start = a
             prev = a
         runs.append((start, prev + 16 - start))
-        for a, n in runs[:64]:
-            request(a, n)
-            last[0] = -1
-            GLib.timeout_add(3000, stalled)
-            b.loop.run()
+        try:
+            if not b.prop("ServicesResolved"):
+                print("\nlink lost: reconnecting...", file=sys.stderr)
+                b.dump_notify = False
+                b.connect()
+                dumper_listen(b, lambda v: None)  # notifications are off after a reconnect
+            for a, n in runs[:64]:
+                request(a, n)
+                last[0] = -1
+                GLib.timeout_add(3000, stalled)
+                b.loop.run()
+        except dbus.DBusException as e:
+            print(f"\n{e.get_dbus_message()}", file=sys.stderr)
+            time.sleep(2)
     GLib.source_remove(timer)
     print(file=sys.stderr)
     missing = [a for a in range(0, FLASH_SIZE, 16) if a not in blocks]
@@ -951,6 +963,24 @@ def main(argv):
                       f"PC {now:%H:%M:%S}  drift {drift:+.0f} s")
             else:
                 print("band clock not set")
+        elif sub == "safeguard":
+            # MorseOS 0.5.7+: watchdog and boot counter (see firmware/morseos/INCIDENTE-0.5.5.md)
+            got = []
+            dumper_listen(b, lambda v: got.append(v) if v[:5] == b"\xfe\xff\xff\xffW" else None)
+            b.char(DUMP_CMD).WriteValue(dbus.Array(b"\x33", signature="y"), {"type": "request"})
+            b.run(5, until=lambda p: bool(got))
+            if not got:
+                die("no safeguard reply (MorseOS 0.5.7+ needed)")
+            v = got[0]
+            capt = int.from_bytes(v[8:10], "little")
+            print(f"boot {v[5]} in a row (updater at 3)  register 0x3c = {v[6]:#04x}  "
+                  f"{'healthy (counter cleared)' if v[11] else 'not yet healthy'}")
+            print(f"watchdog {'ON' if v[7] else 'OFF'}  timeout {(capt << 18) / 16e6:.1f} s  "
+                  f"re-armed {v[10]} times  awake {int.from_bytes(v[12:14], 'little')} s")
+        elif sub == "hang":
+            # MorseOS 0.5.7+: stop the main loop on purpose; the watchdog must reboot the band
+            b.char(DUMP_CMD).WriteValue(dbus.Array(b"\x34HANG", signature="y"), {"type": "request"})
+            print("main loop stopped on purpose: the watchdog should reboot the band in ~4 s")
         elif sub == "sensors":
             # MorseOS: find the I2C devices on PA3 / PA4 / PC4 / PC7
             pins = ["PA3", "PA4", "PC4", "PC7"]
