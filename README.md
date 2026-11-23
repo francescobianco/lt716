@@ -26,8 +26,13 @@ Linux lo vede come `/dev/input/eventN` col nome `716`.
 |---|---|
 | Nome BLE | `716`, uguale alla prima band: si distinguono solo dal MAC |
 | MAC | `FF:FF:5F:12:99:71` |
-| Manufacturer data | chiave `0x344C`, valore vuoto |
+| Manufacturer data | chiave `0x344C`, valore = il MAC (`ff ff 5f 12 99 71`) |
+| Appearance | `0x0180` (Generic Watch) |
 | Servizi | Telink OTA `00010203-0405-0607-0809-0a0b0c0d1912`, UART `6e400001-b5a3-f393-e0a9-e50e24dcca9d` |
+| Firmware | **`V18185`**, versione che non abbiamo da nessuna parte |
+| VID:PID | `248a:8266` |
+| Stringa funzioni | `001000010000011`, uguale alla prima band |
+| Impostazioni | tutte di fabbrica (profilo 30 anni/170 cm/70 kg, obiettivo 10000, notifiche spente) |
 
 Cosa è successo nei primi tentativi, con dongle e band vicini:
 
@@ -38,10 +43,17 @@ Cosa è successo nei primi tentativi, con dongle e band vicini:
 - `MAC=FF:FF:5F:12:99:71 ./lt716 info` (che non richiede il pairing) è scaduto in fase di
   scansione/connessione. **Sulla band non è stato scritto nulla.**
 
-Prossimi passi: avvicinare ancora di più la band al dongle o provare un altro adattatore,
-poi `info`, `battery` e `settings` in sola lettura. **Prima di qualunque OTA**, salvare il
-firmware di fabbrica: sulla prima band il `V15381` originale è andato perso proprio perché
-non c'era un backup (vedi [Flash del firmware](#flash-del-firmware)).
+Più tardi, con il controller interno del portatile (`hci0`) e una scansione solo LE
+(`menu scan` → `transport le`): la band si vede a **−58 dBm**, ma manda pochi annunci
+(3 in 60 s; una scansione normale di 25 s non l'ha trovata). Senza pairing `info` e
+`settings` hanno risposto subito (valori nella tabella sopra): il firmware gira e risponde
+come deve. Non è un controllo byte per byte della flash, che via BLE si potrebbe fare solo
+col dumper, cioè con un OTA che sovrascriverebbe il `V18185`.
+
+**Prima di qualunque OTA** bisogna salvare il `V18185`: sulla prima band il `V15381`
+originale è andato perso proprio perché non c'era un backup (vedi
+[Flash del firmware](#flash-del-firmware)). Sul server FitPro non c'è (vedi
+[Server FitPro](#server-fitpro)); resta la lettura via SWire.
 
 ### Backup cifrato dei dump
 
@@ -276,7 +288,22 @@ Tasto tenuto 10 s = ritorno all'aggiornatore senza Bluetooth.
 L'app chiede il firmware a
 `https://tomato.gulaike.com/api/v1/config/app?name=716&type=1&version=V15381&platform=1`, con
 un token fisso nell'APK e header `country: foreign`. Per `716` (anche con versioni più vecchie,
-`LT716`, `LH716`) risponde `{"success":true,"data":null}`: nessun firmware pubblicato.
+`LT716`, `LH716`) risponde `{"success":true,"data":null}`. Nel 2026-11 la stessa risposta
+è arrivata per `V18185` con 84 combinazioni di nome (`716`, `LT716`, `LH716`, `716:g:h:l`...),
+versione e `platform` 0/1/2.
+
+L'endpoint `/api/v1/config/app/upgrade?name=<nome>` (stesso token) invece restituisce un pacchetto:
+
+| `name` | `version` | Pacchetto (`app.bin` dentro lo zip) | Stringhe nell'immagine |
+|---|---|---|---|
+| `716` | `V07178` | `res.jusonsmart.com/bin/202208/V08928_A08161706_LT716_V5.2_JQGB_M6_FIP.zip` | `V08928`, `LT716(G)`, 2022-08 |
+| `LT716` | `V15850` | `res.jusonsmart.com/0ta/LT716/V17899_A10171436_LT716_V5.3_KM_M4_INNOVA.zip` | `V17899`, `LT716(D)`, 2023-10 |
+| `LH716` | `V36944` | `res.jusonsmart.com/0ta/LH316/V36785_OTA_1120.zip` (per l'LH316, non scaricato) | |
+
+Il campo `version` non coincide con la versione dentro l'immagine. Le due immagini LT716 sono
+in `files/firmware/server/` (fuori da git, con `SHA256SUMS`). Nessuna delle due è il `V18185`
+della seconda band. `V17899` è la più vicina come numero, ma è una variante `(D)` mentre la
+prima band è `(G)`: **non va flashata** senza aver capito quale variante è la seconda band.
 
 ## MorseOS
 
