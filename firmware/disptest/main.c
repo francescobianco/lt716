@@ -20,6 +20,10 @@
  *                                    <variant used> <variant requested>
  *   53 <variant u8>                  init variant (st7735.h), FF = from the ID; re-init, redraw
  *   54 <dc cs rst bl pwr, u16 LE>    LCD pins (SDK encoding, 0 = none); re-init, redraw
+ *   55 <cmd> <data...>               raw panel command (up to 16 data bytes)
+ *   56 <pattern>                     0 test screen, 1 ruler (32-row colour blocks, black line
+ *                                    every 8 rows), 2 all white, 3 all black, 4 checkerboard
+ *                                    16x16 black/grey (a..e x 1..10), 5 all grey
  * Hardware watchdog (4 s), fed only by the main loop: a hang reboots into this firmware.
  */
 
@@ -39,7 +43,7 @@
 #include "vendor/common/blt_common.h"
 #include "st7735.h"
 
-#define DUMPER_VERSION 6   /* 3 = display test, 4 = + pin hunting and watchdog, 5 = + panel ID, 6 = + LCD pins */
+#define DUMPER_VERSION 7   /* 3 = display test, 4 = + pin hunting and watchdog, 5 = + panel ID, 6 = + LCD pins, 7 = + raw panel commands, ruler */
 #define ASSET_START    0x29000
 #define ASSET_END      0x70000
 #define FLASH_SIZE     0x80000
@@ -79,6 +83,9 @@ static volatile u8  reinit_pending;
 static u8 status_pkt[20];
 static u8 reg_pkt[20];
 static volatile u8 reg_pending, id_pending;
+static volatile u8 raw_pending, raw_cmd, raw_n;
+static volatile u8 pattern;   /* 0 test, 1 ruler, 2 white, 3 black, 4 checker, 5 grey */
+static u8 raw_buf[16];
 static volatile u16 pin_sel;
 static volatile u8 pin_mode, pin_pending;
 static int connected;
@@ -188,6 +195,21 @@ int dump_onWrite(rf_packet_att_write_t *p) {
             reinit_pending = 1;
         }
         break;
+    case 0x55:
+        if (len >= 2 && len - 2 <= (int)sizeof(raw_buf) && !raw_pending) {
+            int i;
+            raw_cmd = d[1];
+            raw_n = len - 2;
+            for (i = 0; i < raw_n; i++) raw_buf[i] = d[2 + i];
+            raw_pending = 1;
+        }
+        break;
+    case 0x56:
+        if (len >= 2 && d[1] <= 5) {
+            pattern = d[1];
+            redraw_pending = 1;
+        }
+        break;
     case 0x51:
         if (len >= 4 && d[3] <= 4) {
             pin_sel = d[1] | d[2] << 8;
@@ -291,7 +313,30 @@ static void draw_touch(int on) {
     lcd_fill(3, lcd.height - 13, 10, 10, on ? C_YELLOW : C_GREY);
 }
 
+
+
+/* ruler: 32-row blocks red, green, blue, white, yellow, a black line every 8 rows */
+static void draw_ruler(void) {
+    static const u16 col[5] = {C_RED, C_GREEN, C_BLUE, C_WHITE, C_YELLOW};
+    int y;
+    for (y = 0; y < lcd.height; y += 8) {
+        lcd_fill(0, y, lcd.width, 1, C_BLACK);
+        lcd_fill(0, y + 1, lcd.width, 7, col[(y / 32) % 5]);
+    }
+}
+
 static void draw_test(void) {
+    if (pattern == 1) { draw_ruler(); return; }
+    if (pattern == 4) {   /* checkerboard 16x16: columns a..e left to right, rows 1..10 top down */
+        int x, y;
+        for (y = 0; y < lcd.height; y += 16)
+            for (x = 0; x < lcd.width; x += 16)
+                lcd_fill(x, y, 16, 16, ((x + y) / 16) & 1 ? C_GREY : C_BLACK);
+        return;
+    }
+    if (pattern == 5) { lcd_fill(0, 0, lcd.width, lcd.height, C_GREY); return; }
+    if (pattern >= 2) { lcd_fill(0, 0, lcd.width, lcd.height, pattern == 2 ? C_WHITE : C_BLACK); return; }
+
     int w = lcd.width, h = lcd.height, i, bar = h / 6;
     lcd_fill(0, 0, w, h, C_BLACK);
     lcd_fill(0, 0, w, 1, C_WHITE);           /* border */
@@ -415,6 +460,10 @@ int main() {
     while (1) {
         wd_feed();
         blt_sdk_main_loop();
+        if (raw_pending) {
+            lcd_cmd(raw_cmd, raw_buf, raw_n);
+            raw_pending = 0;
+        }
         if (pin_pending) {
             pin_pending = 0;
             apply_pin();

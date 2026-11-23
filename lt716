@@ -1080,12 +1080,28 @@ def main(argv):
                                                                     for c in codes),
                                                    signature="y"), {"type": "request"})
             print("dc cs rst bl pwr = " + " ".join(args[1:]))
+        elif sub in ("lcdcmd", "pattern"):
+            # display test firmware v7: lcdcmd <cmd> [data...] (hex) | pattern test|ruler|white|black|checker|grey
+            if sub == "lcdcmd":
+                if len(args) < 2:
+                    die("usage: lt716 dumper lcdcmd <cmd> [data...]   (hex bytes)", 2)
+                raw = bytes(int(x, 16) for x in args[1:])
+                b.char(DUMP_CMD).WriteValue(dbus.Array(b"\x55" + raw, signature="y"),
+                                            {"type": "request"})
+                print("sent " + raw.hex(" "))
+            else:
+                names = ["test", "ruler", "white", "black", "checker", "grey"]
+                if len(args) < 2 or args[1] not in names:
+                    die("usage: lt716 dumper pattern test|ruler|white|black|checker|grey", 2)
+                b.char(DUMP_CMD).WriteValue(dbus.Array(bytes([0x56, names.index(args[1])]),
+                                                       signature="y"), {"type": "request"})
+                print(f"pattern {args[1]}")
         elif sub == "panel":
             # display test firmware v5: panel ID (RDDID) and init variant
             #   panel                     show the ID and the variant in use
-            #   panel <0..5|auto>         re-init with that variant, then show the ID
+            #   panel <0..6|auto>         re-init with that variant, then show the ID
             names = ["ST7735 (ours)", "ST7735S (stock)", "GC9106", "GC9107", "NV 33 30 23",
-                     "NV 33 30 25"]
+                     "NV 33 30 25", "GC9107 (V10712)"]
             if len(args) > 1:
                 v = 0xFF if args[1] == "auto" else int(args[1])
                 b.char(DUMP_CMD).WriteValue(dbus.Array(bytes([0x53, v]), signature="y"),

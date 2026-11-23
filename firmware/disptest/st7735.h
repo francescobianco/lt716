@@ -43,15 +43,16 @@ extern lcd_cfg_t lcd;
 #define C_YELLOW 0xFFE0
 #define C_GREY   0x4208
 
-#define LCD_VARIANTS 6
+#define LCD_VARIANTS 7
 #define LCD_AUTO     0xFF
 extern u8 lcd_variant;  /* 0 our ST7735, 1 stock ST7735S, 2 GC9106, 3 GC9107, 4 NV 333023,
-                           5 NV 333025, LCD_AUTO = from the panel ID like the stock firmware */
+                           5 NV 333025, 6 GC9107 of V10712, LCD_AUTO = from the panel ID like the stock firmware */
 extern u8 lcd_id[3];    /* RDDID bytes read by the last lcd_init() */
 extern u8 lcd_chosen;   /* variant used by the last lcd_init() */
 void lcd_init(void);           /* reset, read ID, init sequence; sets lcd for that variant */
 void lcd_apply(void);          /* MADCTL and inversion from lcd */
 void lcd_backlight(int on);
+void lcd_cmd(u8 c, const u8 *a, int n);   /* raw panel command with its data */
 void lcd_fill(int x, int y, int w, int h, u16 color);
 
 #endif
