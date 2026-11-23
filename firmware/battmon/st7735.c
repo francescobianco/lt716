@@ -216,6 +216,10 @@ void lcd_init(void) {
                             0x2E, 0x2E, 0x37, 0x3F, 0x00, 0x00, 0x02, 0x10};
 
     out_pin(LCD_BL, 0);
+    /* real power cycle: registers left wrong (e.g. by bytes taken as commands) do not survive
+     * an MCU reboot otherwise, since a floating PA0 keeps the panel half powered */
+    out_pin(LCD_PWR, 0);
+    sleep_us(100 * 1000);
     out_pin(LCD_PWR, 1);
     sleep_us(20 * 1000);
     hw_setup();
@@ -228,6 +232,8 @@ void lcd_init(void) {
     lcd_chosen = lcd_variant < LCD_VARIANTS ? lcd_variant : pick_variant();
 
     if (lcd_chosen) {
+        cmd_args(0x01, 0, 0);      /* SWRESET: the stock scripts rely on RST alone */
+        sleep_us(120 * 1000);
         lcd.colstart = variants[lcd_chosen].col;
         lcd.rowstart = variants[lcd_chosen].row;
         lcd.madctl = variants[lcd_chosen].madctl;
