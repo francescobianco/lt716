@@ -10,6 +10,17 @@
  * Test screen: white border on the window edge, red/green/blue bars, a white triangle
  * pointing up, a square bottom-left that turns yellow while the key is touched.
  * Touch key held 10 s -> back to the vendor updater (no BLE needed).
+ *
+ * Pin hunting over BLE (version 4, for bands whose screen or key are not on the known pins):
+ *   50 <addr u32 LE> <n u8>          read n (<=12) bytes of register space [0x800000, 0x810000):
+ *                                    DATA notification FD FF FF FF <addr u32 LE> <bytes>
+ *   51 <pin u16 LE> <mode u8>        pin as GPIO: 0 input float, 1 input pull-up 10k,
+ *                                    2 input pull-down 100k, 3 output low, 4 output high
+ *   52                               panel ID: DATA notification FC FF FF FF 'I' <id0 id1 id2>
+ *                                    <variant used> <variant requested>
+ *   53 <variant u8>                  init variant (st7735.h), FF = from the ID; re-init, redraw
+ *   54 <dc cs rst bl pwr, u16 LE>    LCD pins (SDK encoding, 0 = none); re-init, redraw
+ * Hardware watchdog (4 s), fed only by the main loop: a hang reboots into this firmware.
  */
 
 #include "drivers/5316/bsp.h"
@@ -28,7 +39,7 @@
 #include "vendor/common/blt_common.h"
 #include "st7735.h"
 
-#define DUMPER_VERSION 3   /* 3 = display test */
+#define DUMPER_VERSION 6   /* 3 = display test, 4 = + pin hunting and watchdog, 5 = + panel ID, 6 = + LCD pins */
 #define ASSET_START    0x29000
 #define ASSET_END      0x70000
 #define FLASH_SIZE     0x80000
@@ -66,6 +77,10 @@ static volatile u8  status_pending;
 static volatile u8  redraw_pending = 1;
 static volatile u8  reinit_pending;
 static u8 status_pkt[20];
+static u8 reg_pkt[20];
+static volatile u8 reg_pending, id_pending;
+static volatile u16 pin_sel;
+static volatile u8 pin_mode, pin_pending;
 static int connected;
 
 _attribute_ram_code_ void irq_handler(void) { irq_blt_sdk_handler(); }
@@ -139,6 +154,46 @@ int dump_onWrite(rf_packet_att_write_t *p) {
         break;
     case 0x21:
         reinit_pending = 1;
+        break;
+    case 0x50:
+        if (len >= 6 && !reg_pending) {
+            u32 a = rd32(d + 1);
+            int n = d[5], i;
+            if (n > 12) n = 12;
+            if (a >= 0x800000 && a + n <= 0x810000) {
+                for (i = 0; i < 20; i++) reg_pkt[i] = 0;
+                wr32(reg_pkt, 0xFFFFFFFD);
+                wr32(reg_pkt + 4, a);
+                for (i = 0; i < n; i++) reg_pkt[8 + i] = REG_ADDR8(a + i);
+                reg_pending = 1;
+            }
+        }
+        break;
+    case 0x52:
+        id_pending = 1;
+        break;
+    case 0x53:
+        if (len >= 2 && (d[1] < LCD_VARIANTS || d[1] == LCD_AUTO)) {
+            lcd_variant = d[1];
+            reinit_pending = 1;
+        }
+        break;
+    case 0x54:
+        if (len >= 11) {
+            lcd_pins.dc = d[1] | d[2] << 8;
+            lcd_pins.cs = d[3] | d[4] << 8;
+            lcd_pins.rst = d[5] | d[6] << 8;
+            lcd_pins.bl = d[7] | d[8] << 8;
+            lcd_pins.pwr = d[9] | d[10] << 8;
+            reinit_pending = 1;
+        }
+        break;
+    case 0x51:
+        if (len >= 4 && d[3] <= 4) {
+            pin_sel = d[1] | d[2] << 8;
+            pin_mode = d[3];
+            pin_pending = 1;
+        }
         break;
     case 0x05:
         if (len >= 5 && d[1] == 'U' && d[2] == 'P' && d[3] == 'D' && d[4] == 'T') updater_pending = 1;
@@ -262,6 +317,36 @@ static void buzz(int ms) {
     gpio_set_input_en(PIN_TOUCH, 1);
 }
 
+#define WD_MS        4000
+#define TICKS_PER_MS 16000
+
+static void wd_arm(void) {
+    u32 capt = ((u32)WD_MS * TICKS_PER_MS) >> WATCHDOG_TIMEOUT_COEFF;
+    reg_tmr_sta = FLD_TMR_STA_WD;
+    reg_tmr_ctrl = (reg_tmr_ctrl & 0x1ff) | ((capt & 0x3fff) << 9) | FLD_TMR_WD_EN;
+}
+
+static void wd_feed(void) {
+    if (!(reg_tmr_ctrl & FLD_TMR_WD_EN)) wd_arm();
+    reg_tmr_sta = FLD_TMR_STA_WD;
+}
+
+static void apply_pin(void) {
+    GPIO_PinTypeDef pin = (GPIO_PinTypeDef)pin_sel;
+    static const u8 pull[3] = {GPIO_PULL_UP_DOWN_FLOAT, GPIO_PULL_UP_10K, GPIO_PULL_DOWN_100K};
+    gpio_set_func(pin, AS_GPIO);
+    if (pin_mode <= 2) {
+        gpio_set_output_en(pin, 0);
+        gpio_set_input_en(pin, 1);
+        gpio_setup_up_down_resistor(pin, pull[pin_mode]);
+    } else {
+        gpio_setup_up_down_resistor(pin, GPIO_PULL_UP_DOWN_FLOAT);
+        gpio_write(pin, pin_mode == 4);
+        gpio_set_input_en(pin, 0);
+        gpio_set_output_en(pin, 1);
+    }
+}
+
 static void on_connect(u8 e, u8 *p, int n) {
     connected = 1;
     bls_l2cap_requestConnParamUpdate(6, 12, 0, 400);  // 7.5-15 ms, no latency, 4 s timeout
@@ -280,6 +365,7 @@ int main() {
     blc_pm_select_internal_32k_crystal();
     cpu_wakeup_init();
     clock_init(SYS_CLK_16M_Crystal);
+    wd_arm();
     gpio_init();
 
     gpio_set_func(PIN_MOTOR, AS_GPIO);
@@ -327,7 +413,12 @@ int main() {
     u32 touch_t0 = 0;
     int touched = 0;
     while (1) {
+        wd_feed();
         blt_sdk_main_loop();
+        if (pin_pending) {
+            pin_pending = 0;
+            apply_pin();
+        }
 
         /* touch key: indicator and the 10 s emergency exit, with or without BLE */
         int t = gpio_read(PIN_TOUCH) ? 1 : 0;
@@ -362,6 +453,14 @@ int main() {
         if (status_pending) {
             if (bls_att_pushNotifyData(dump_data_handle, status_pkt, sizeof(status_pkt)) == BLE_SUCCESS)
                 status_pending = 0;
+        } else if (id_pending) {
+            u8 pkt[20] = {0xFC, 0xFF, 0xFF, 0xFF, 'I', lcd_id[0], lcd_id[1], lcd_id[2], lcd_chosen,
+                          lcd_variant};
+            if (bls_att_pushNotifyData(dump_data_handle, pkt, sizeof(pkt)) == BLE_SUCCESS)
+                id_pending = 0;
+        } else if (reg_pending) {
+            if (bls_att_pushNotifyData(dump_data_handle, reg_pkt, sizeof(reg_pkt)) == BLE_SUCCESS)
+                reg_pending = 0;
         } else if (info_pending) send_info();
         else if (stream_on) pump_stream();
         if (updater_pending) enter_updater();

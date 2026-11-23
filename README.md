@@ -50,10 +50,52 @@ Più tardi, con il controller interno del portatile (`hci0`) e una scansione sol
 come deve. Non è un controllo byte per byte della flash, che via BLE si potrebbe fare solo
 col dumper, cioè con un OTA che sovrascriverebbe il `V18185`.
 
-**Prima di qualunque OTA** bisogna salvare il `V18185`: sulla prima band il `V15381`
-originale è andato perso proprio perché non c'era un backup (vedi
-[Flash del firmware](#flash-del-firmware)). Sul server FitPro non c'è (vedi
-[Server FitPro](#server-fitpro)); resta la lettura via SWire.
+Il `V18185` non è sul server FitPro (vedi [Server FitPro](#server-fitpro)); per salvarlo
+restavano SWire (aprendo la band) o un dumper scritto in `0x20000` al posto dell'aggiornatore.
+La prima band non c'è più, quindi non c'era un'unità su cui provare prima.
+
+**2026-11-23: si è scelto di rinunciare al `V18185`.** `./lt716 ota --enter-updater` ha
+avviato l'aggiornatore (annunci molto più frequenti, ~3 al secondo; manca `2A28`), poi
+`firmware/battmon` (8612 B) è stato scritto in `0x0` in 6,9 s. Subito dopo la band non annuncia
+più, come ci si aspetta da battmon, che non usa la radio. **Il `V18185` è sovrascritto e perso.**
+L'aggiornatore della seconda band in `0x20000` non è stato toccato.
+
+battmon ha girato 10 minuti (poi è tornato da solo all'aggiornatore) ma lo schermo è rimasto nero:
+il display di questa band è diverso. Dump completo (due copie identiche) in
+`files/firmware/band2_flash_{1,2}.bin`: il banco 0 è cancellato per intero, restano le risorse
+del `V18185` (diverse da quelle della prima band) e l'aggiornatore (diverso da quello della
+prima band, 0x8d74 byte).
+
+#### Hardware della seconda band (trovato con `firmware/disptest` v4–v6)
+
+| Funzione | Pin | Prima band |
+|---|---|---|
+| Tasto touch | PC2, attivo alto | uguale |
+| Motore | PA5, attivo alto | uguale |
+| Alimentazione del display | **PA0**, alto = acceso | non c'è |
+| DC del display | **PC6** | PC1 |
+| MOSI / CLK / CS / RST | PC3 / PC5 / PA1 / PA6 | uguale |
+| Controller | **GC9107**, RDDID `00 91 07` | ST7735S |
+| Retroilluminazione | da confermare (PC1 o PB3) | PB3 |
+| LED verde del sensore | uno di PA4, PA7, PB1, PB2, PC7, attivo basso | |
+
+Senza PA0 alto il pannello non risponde: l'ID letto è `00 00 00`. Con DC sul pin sbagliato
+il pannello prende anche i pixel come comandi: si accende (SLPOUT/DISPON passano), mostra il
+vecchio contenuto della sua RAM (la schermata "OTA" del `V18185`, specchiata) e si scurisce man
+mano, perché i colori finiscono nei registri di tensione.
+
+Come ci si è arrivati:
+- i firmware di fabbrica (`V17899`, `V08928`) non hanno un init fisso. Leggono l'ID del controller
+  (RDDID `0x04`, SPI software su PC3/PC5, un clock a vuoto, 24 bit) e scelgono fra ST7735S,
+  GC9106, GC9107 e due controller "FF A5" (tipo NV3023). disptest v5 fa lo stesso;
+- `dumper pin` + `dumper panel auto` su ogni pin, alto e basso: l'ID compare solo con PA0
+  alto, e sparisce con PC6 alto (quindi PC6 è DC);
+- la batteria scarica (dopo 6 OTA) faceva riavviare la band in continuazione: una volta messa in
+  carica, la v6 ha disegnato la cornice.
+
+Comandi di disptest (`./lt716 dumper ...`): `reg <addr> [n]`, `pin <PA0..PC7>
+float|up|down|low|high`, `watch [s]` (bit d'ingresso che cambiano), `panel [0..5|auto]`
+(ID e variante di init), `lcdpins <dc> <cs> <rst> <bl> <pwr>`. Watchdog di 4 s dalla v4.
 
 ### Backup cifrato dei dump
 

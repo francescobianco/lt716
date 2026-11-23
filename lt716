@@ -926,6 +926,10 @@ def main(argv):
             ver = re.search(rb"V\d{5}", img)
             name = f"LT716_{ver.group().decode() if ver else 'bank0'}.ota.bin"
             path = os.path.join(os.path.dirname(out), name)
+            if os.path.exists(path) and open(path, "rb").read() != img:
+                # never overwrite an older image (another band, another firmware) with this one
+                stem = os.path.splitext(os.path.basename(out))[0]
+                path = os.path.join(os.path.dirname(out), f"{stem}_{name}")
             if errs:
                 print("bank 0 image NOT valid: " + "; ".join(errs))
             else:
@@ -1053,6 +1057,100 @@ def main(argv):
                 print(f"col {v[0]} row {v[1]} size {v[2]}x{v[3]} madctl {v[4]:#04x} invert {v[5]}")
             else:
                 die("usage: lt716 dumper lcd <col> <row> <w> <h> <madctl> <invert> | lcd reinit", 2)
+        elif sub == "lcdpins":
+            # display test firmware v6: lcdpins <dc> <cs> <rst> <bl> <pwr>  (PA0..PC7 or -)
+            if len(args) != 6:
+                die("usage: lt716 dumper lcdpins <dc> <cs> <rst> <bl> <pwr>   (PA0..PC7 or -)", 2)
+            codes = []
+            for a in args[1:]:
+                m = re.fullmatch(r"P([ABC])([0-7])", a.upper())
+                if not m and a != "-":
+                    die(f"bad pin: {a}", 2)
+                codes.append(0 if a == "-" else "ABC".index(m.group(1)) << 8 | 1 << int(m.group(2)))
+            b.char(DUMP_CMD).WriteValue(dbus.Array(b"\x54" + b"".join(c.to_bytes(2, "little")
+                                                                    for c in codes),
+                                                   signature="y"), {"type": "request"})
+            print("dc cs rst bl pwr = " + " ".join(args[1:]))
+        elif sub == "panel":
+            # display test firmware v5: panel ID (RDDID) and init variant
+            #   panel                     show the ID and the variant in use
+            #   panel <0..5|auto>         re-init with that variant, then show the ID
+            names = ["ST7735 (ours)", "ST7735S (stock)", "GC9106", "GC9107", "NV 33 30 23",
+                     "NV 33 30 25"]
+            if len(args) > 1:
+                v = 0xFF if args[1] == "auto" else int(args[1])
+                b.char(DUMP_CMD).WriteValue(dbus.Array(bytes([0x53, v]), signature="y"),
+                                            {"type": "request"})
+                time.sleep(1.5)
+            got = []
+
+            def on_id(v):
+                if v[:5] == b"\xfc\xff\xff\xffI":
+                    got.append(v)
+                    b.loop.quit()
+
+            dumper_listen(b, on_id)
+            b.char(DUMP_CMD).WriteValue(dbus.Array(b"\x52", signature="y"), {"type": "request"})
+            b.run(3, until=lambda p: bool(got))
+            if not got:
+                die("no panel reply (display test firmware v5 needed)")
+            v = got[0]
+            req = "auto" if v[9] == 0xFF else str(v[9])
+            print(f"panel ID {v[5]:02x} {v[6]:02x} {v[7]:02x}  variant {v[8]} "
+                  f"({names[v[8]] if v[8] < len(names) else '?'})  requested {req}")
+        elif sub in ("reg", "pin", "watch"):
+            # display test firmware v4: pin hunting over BLE
+            #   reg <addr> [n]            read registers (addr 0x800000-0x80ffff)
+            #   pin <PA0..PC7> <mode>     float|up|down|low|high
+            #   watch [seconds]           print GPIO input levels of PA/PB/PC when they change
+            got = []
+            def on_reg(v):
+                if v[:4] == b"\xfd\xff\xff\xff":
+                    got.append(v)
+                    b.loop.quit()  # run() checks until only on UART packets: stop it here
+
+            dumper_listen(b, on_reg)
+
+            def reg(addr, n):
+                got.clear()
+                b.char(DUMP_CMD).WriteValue(dbus.Array(b"\x50" + addr.to_bytes(4, "little") +
+                                                       bytes([n]), signature="y"),
+                                            {"type": "request"})
+                b.run(2, until=lambda p: bool(got))
+                if not got:
+                    die("no register reply (display test firmware v4 needed)")
+                return got[0][8:8 + n]
+
+            if sub == "reg":
+                if len(args) < 2:
+                    die("usage: lt716 dumper reg <addr> [n]", 2)
+                a = int(args[1], 0)
+                a = a | 0x800000 if a < 0x10000 else a
+                n = int(args[2], 0) if len(args) > 2 else 1
+                print(f"{a:#08x}: {reg(a, n).hex(' ')}")
+            elif sub == "pin":
+                modes = ["float", "up", "down", "low", "high"]
+                m = re.fullmatch(r"P([ABC])([0-7])", args[1].upper()) if len(args) > 1 else None
+                if not m or len(args) < 3 or args[2] not in modes:
+                    die("usage: lt716 dumper pin <PA0..PC7> float|up|down|low|high", 2)
+                code = "ABC".index(m.group(1)) << 8 | 1 << int(m.group(2))
+                b.char(DUMP_CMD).WriteValue(dbus.Array(b"\x51" + code.to_bytes(2, "little") +
+                                                       bytes([modes.index(args[2])]),
+                                                       signature="y"), {"type": "request"})
+                print(f"{args[1].upper()} -> {args[2]}")
+            else:
+                secs = float(args[1]) if len(args) > 1 else 30
+                t0, last = time.time(), None
+                print("PA/PB/PC input bits, 7..0; touch the key and watch which bit moves")
+                while time.time() - t0 < secs:
+                    v = (reg(0x800580, 1)[0], reg(0x800588, 1)[0], reg(0x800590, 1)[0])
+                    if v != last:
+                        diff = "" if last is None else "  changed: " + " ".join(
+                            f"P{'ABC'[k]}{i}" for k in range(3) for i in range(8)
+                            if (v[k] ^ last[k]) >> i & 1)
+                        print(f"{time.time() - t0:6.1f} s  PA {v[0]:08b}  PB {v[1]:08b}  "
+                              f"PC {v[2]:08b}{diff}", flush=True)
+                        last = v
         elif sub == "updater":
             # clear the dumper's own magic at 0x8 and reboot into the vendor updater (0x20000)
             b.char(DUMP_CMD).WriteValue(dbus.Array(b"\x05UPDT", signature="y"), {"type": "request"})
