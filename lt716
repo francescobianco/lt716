@@ -777,8 +777,9 @@ def main(argv):
     elif c == "battery":
         print(f"{Band().read('2a19')[0]}%")
     elif c == "settime":
-        t = datetime.datetime.now()
-        Band().cmd(packet(0x12, 0x01, clock(t)))
+        b = Band()
+        t = datetime.datetime.now()  # after connecting, so the band is not set seconds behind
+        b.cmd(packet(0x12, 0x01, clock(t)))
         print(f"clock set to {t:%Y-%m-%d %H:%M:%S}")
     elif c == "find":
         Band().cmd(switch(0x12, 0x0B, 1))
@@ -951,13 +952,21 @@ def main(argv):
         elif sub == "battery":
             # MorseOS: battery mV, gauge, charger, and the band's clock against this PC
             got = []
-            dumper_listen(b, lambda v: got.append(v) if v[:5] == b"\xfe\xff\xff\xffB" else None)
+            stamp = []
+
+            def on_bat(v):
+                if v[:5] == b"\xfe\xff\xff\xffB":
+                    got.append(v)
+                    stamp.append(datetime.datetime.now())
+                    b.loop.quit()  # run() checks until only on UART packets
+
+            dumper_listen(b, on_bat)
             b.char(DUMP_CMD).WriteValue(dbus.Array(b"\x31", signature="y"), {"type": "request"})
             b.run(5, until=lambda p: bool(got))
             if not got:
                 die("no battery reply (MorseOS 0.5.4+ needed)")
             v = got[0]
-            now = datetime.datetime.now()
+            now = stamp[0]  # PC time when the reply arrived
             print(f"battery {int.from_bytes(v[5:7], 'little')} mV  gauge {v[7]}%"
                   f"{'  charging' if v[8] else ''}")
             if v[9]:

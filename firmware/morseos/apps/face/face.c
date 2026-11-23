@@ -70,8 +70,8 @@ static int pump;          /* charging animation: extra px above the level, 0..14
 static u32 t_pump, t_sense;
 
 static void draw_battery(void) {
-    int lvl = battery_level(), chg = battery_charging();
-    u16 col = chg ? C_BLUE : lvl >= 50 ? C_GREEN : lvl >= 25 ? C_YELLOW : C_RED;
+    int lvl = battery_level(), chg = battery_charging(), done = battery_full();
+    u16 col = chg && !done ? C_BLUE : lvl >= 50 ? C_GREEN : lvl >= 25 ? C_YELLOW : C_RED;
     lcd_fill(54, 0, lcd.width - 54, 12, C_BLACK);
     lcd_fill(56, 2, 18, 1, C_WHITE);   /* battery outline + nub */
     lcd_fill(56, 10, 18, 1, C_WHITE);
@@ -81,13 +81,16 @@ static void draw_battery(void) {
     pump = 0;
     t_pump = clock_time();
     draw_fill(lvl * 14 / 100, col);
-    last_level = lvl;
-    last_charging = chg;
+    last_level = lvl * 14 / 100;       /* redraw only when the bar would change */
+    last_charging = chg | done << 1;
 }
 
-/* charging: the fill climbs from the level to full in 4 steps, then starts again */
+/* charging: the fill climbs from the level to full in 4 steps, then starts again; near full
+ * it still climbs from 10 px so the animation is always visible until the charge is done */
 static void pump_battery(void) {
-    int base = battery_level() * 14 / 100, step = (14 - base + 3) / 4;
+    int base = battery_level() * 14 / 100, step;
+    if (base > 10) base = 10;
+    step = (14 - base + 3) / 4;
     if (!clock_time_exceed(t_pump, 400 * 1000)) return;
     t_pump = clock_time();
     if (step < 1) step = 1;
@@ -143,8 +146,10 @@ static void tick(void) {
         t_sense = clock_time();
         battery_update();
     }
-    if (battery_level() != last_level || battery_charging() != last_charging) draw_battery();
-    else if (last_charging && mos_screen_on()) pump_battery();
+    if (battery_level() * 14 / 100 != last_level ||
+        (battery_charging() | battery_full() << 1) != last_charging)
+        draw_battery();
+    else if (last_charging == 1 && mos_screen_on()) pump_battery();
     if (link_changed()) draw_link();
 }
 

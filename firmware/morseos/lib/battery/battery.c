@@ -47,6 +47,10 @@ static u32 sample(GPIO_PinTypeDef pin) {
     return ((sum / 8) * 295) >> 8;  /* mV at the pin */
 }
 
+static int full;            /* charge complete (see battery_full) */
+static u32 t_ref, ref_mv;
+static int ref_set;
+
 void battery_update(void) {
     if (!inited) {
         adc_init();
@@ -54,6 +58,21 @@ void battery_update(void) {
     }
     vbat_mv = sample(PIN_VBAT) * 4;
     charger_mv = sample(PIN_CHARGER) * 8;
+
+    /* charge complete: the charger IC (CC/CV to 4.20 V) decides, the firmware only watches.
+     * Full = above 4150 mV and risen less than 10 mV in 4 minutes (the CV phase has ended). */
+    if (!battery_charging()) {
+        full = 0;
+        ref_set = 0;
+    } else if (!ref_set) {
+        ref_set = 1;
+        t_ref = clock_time();
+        ref_mv = vbat_mv;
+    } else if (clock_time_exceed(t_ref, 240u * 1000 * 1000)) {   /* < 268 s tick wrap */
+        if (vbat_mv >= 4150 && vbat_mv <= ref_mv + 10) full = 1;
+        t_ref = clock_time();
+        ref_mv = vbat_mv;
+    }
 }
 
 void battery_poll(void) {
@@ -68,12 +87,23 @@ void battery_poll(void) {
 
 u32 battery_mv(void) { return vbat_mv; }
 
-int battery_level(void) {
-    if (vbat_mv >= 3800) return 100;
-    if (vbat_mv >= 3700) return 75;
-    if (vbat_mv >= 3600) return 50;
-    if (vbat_mv >= 3500) return 25;
-    return 0;
-}
-
 int battery_charging(void) { return charger_mv >= 4400 && charger_mv <= 6500; }
+
+int battery_full(void) { return full; }
+
+/* percent from a typical Li-ion rest curve; on the charger the cell reads about 120 mV high */
+int battery_level(void) {
+    static const u16 mv[] = {3500, 3600, 3700, 3800, 3900, 4000, 4100, 4200};
+    static const u8 pct[] = {5, 15, 30, 50, 65, 80, 90, 100};
+    u32 v = vbat_mv;
+    int i;
+    if (battery_charging()) {
+        if (full) return 100;
+        v = v > 120 ? v - 120 : 0;
+    }
+    if (v < mv[0]) return v > 3300 ? (int)((v - 3300) * 5 / 200) : 0;   /* 3300..3500: 0..5 */
+    for (i = 1; i < 8; i++)
+        if (v < mv[i])
+            return pct[i - 1] + (int)((v - mv[i - 1]) * (pct[i] - pct[i - 1]) / (mv[i] - mv[i - 1]));
+    return battery_charging() ? 99 : 100;   /* on the charger 100 only once full */
+}
