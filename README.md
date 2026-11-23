@@ -43,6 +43,16 @@ poi `info`, `battery` e `settings` in sola lettura. **Prima di qualunque OTA**, 
 firmware di fabbrica: sulla prima band il `V15381` originale è andato perso proprio perché
 non c'era un backup (vedi [Flash del firmware](#flash-del-firmware)).
 
+### Backup cifrato dei dump
+
+`files/firmware/` è fuori da git. Una copia cifrata (tar.gz + gpg AES256, con `SHA256SUMS`
+dentro) è in `files/firmware-backup.tar.gz.gpg`; la password non è nel repo. Per ripristinarla:
+
+```shell
+gpg -d files/firmware-backup.tar.gz.gpg | tar xzf - -C files
+(cd files/firmware && sha256sum -c SHA256SUMS)
+```
+
 ## Uso rapido
 
 ```shell
