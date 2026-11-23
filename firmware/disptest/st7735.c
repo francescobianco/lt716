@@ -12,7 +12,7 @@
 /* 0.96" 80x160 panels sit at an offset in the 132x162 controller RAM. */
 /* Found on the LT716 0.96" panel with firmware/disptest (2026-11-06): full border visible,
  * colours right, key at the bottom as in the stock firmware. */
-lcd_pins_t lcd_pins = {GPIO_PC6, GPIO_PA1, GPIO_PA6, GPIO_PB3, GPIO_PA0};
+lcd_pins_t lcd_pins = {GPIO_PC6, GPIO_PA1, GPIO_PA6, GPIO_PA2, GPIO_PA0};
 lcd_cfg_t lcd = {26, 1, 80, 160, MADCTL_MY | MADCTL_MX | MADCTL_BGR, 1};
 
 static inline void spi_byte(u8 b) {

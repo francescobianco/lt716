@@ -8,7 +8,7 @@
 #define LCD_MOSI GPIO_PC3
 #define LCD_CLK  GPIO_PC5
 /* DC, CS, RST, backlight and panel power can be changed at run time (BLE command 54):
- * the second LT716 (2026-11-23) answers RDDID only with PA0 high and PC6 low. 0 = none. */
+ * second LT716 (2026-11-23): GC9107, power PA0, DC PC6, backlight PA2 (high = on). 0 = none. */
 typedef struct { u16 dc, cs, rst, bl, pwr; } lcd_pins_t;
 extern lcd_pins_t lcd_pins;
 #define LCD_DC   lcd_pins.dc

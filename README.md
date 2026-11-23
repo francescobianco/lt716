@@ -76,8 +76,9 @@ prima band, 0x8d74 byte).
 | DC del display | **PC6** | PC1 |
 | MOSI / CLK / CS / RST | PC3 / PC5 / PA1 / PA6 | uguale |
 | Controller | **GC9107**, RDDID `00 91 07` | ST7735S |
-| Retroilluminazione | da confermare (PC1 o PB3) | PB3 |
+| Retroilluminazione | **PA2**, alto = acceso (flottante = debole) | PB3 |
 | LED verde del sensore | uno di PA4, PA7, PB1, PB2, PC7, attivo basso | |
+| Alimentazione del touch (?) | uno di PB4–PB7, PC0, PC4, PC7: portati tutti bassi, PC2 è rimasto alto 10 s e disptest è uscito da solo all'aggiornatore | |
 
 Senza PA0 alto il pannello non risponde: l'ID letto è `00 00 00`. Con DC sul pin sbagliato
 il pannello prende anche i pixel come comandi: si accende (SLPOUT/DISPON passano), mostra il
