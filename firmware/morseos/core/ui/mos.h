@@ -3,8 +3,8 @@
  *
  * An app is a mos_app_t. The bundle (tools/bundle.py) lists the selected apps in
  * mos_entries[] with the menu they belong to; the menus are built from that table:
- *   main menu  = apps with menu "MENU", then one box per other menu name (STRUMENTI,
- *                GIOCHI, ...) that has at least one app, then TORNA
+ *   main menu  = apps with menu "MENU" and one box per other menu name (STRUMENTI,
+ *                GIOCHI, ...), in bundle order, then TORNA
  *   submenu    = its apps, then INDIETRO
  * The home app (flag MOS_F_HOME, the watch face) is shown on wake-up and on timeouts.
  */
@@ -60,6 +60,8 @@ void mos_set_rssi(int dbm);
 int  mos_rssi(void);                  /* dBm of the link */
 int  mos_signal_bars(void);           /* 0..4 */
 void mos_buzz(int ms);
+void mos_set_vibration(int on);  /* off: mos_buzz() is silent (the emergency exit is not) */
+int  mos_vibration(void);
 void mos_notify(const u8 *pkt, int len);
 u32  mos_press_ms(void);
 u32  mos_ms_since(u32 tick);

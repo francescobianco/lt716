@@ -55,6 +55,13 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   latenza 4 (veloce solo per dump/scritture/OTA), TX 3,3 dBm. `lt716 dumper battery` per mV e
   deriva dell'orologio. Da verificare con misure nel tempo.
 
+- ✅ **MENU > IMPOSTAZIONI** (0.6.0): lista di proprietà con valore (VELOCITA 1–16,
+  VIBRAZIONE SI/NO, INDIETRO). Tap = proprietà successiva; tenuto (barra verde) = modifica,
+  poi i tap cambiano il valore e un altro tenuto conferma; tenuto su INDIETRO = menu. Il menu
+  principale segue l'ordine del bundle: INFO, STRUMENTI, IMPOSTAZIONI, TORNA.
+- ✅ **Seconda band** (0.5.8–0.5.11): display GC9107 (alimentazione PA0, DC PC6, retroilluminazione
+  PA2, MADCTL `0x00`), indicatore Li-ion con fine carica, animazione di carica.
+
 ## In corso
 
 - ⚠️ **Prima di tutto, sul doppione: watchdog + contatore di riavvii** (3 blocchi di fila →
@@ -88,8 +95,12 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   per accendere**, sonno.
 - 📌 **Tuning Morse**: ritoccare soglie col touchlog quando l'utente è "meno arrugginito".
 
-- 📌 **Velocità salvata in flash** (oggi torna a 7 a ogni riavvio) e **impostabile dalla band**
-  (menu IMPOSTAZIONI > VELOCITA, con la barra di carica per confermare).
+- 📌 **Impostazioni salvate in flash**: oggi VELOCITA e VIBRAZIONE tornano a 9 / SI a ogni
+  riavvio. Una scrittura in flash è codice rischioso: da sola, in una versione a parte.
+- 📌 **Fascia più chiara in alto** (righe 0–32) sulla seconda band, solo dentro MorseOS:
+  disptest è uniforme (nero, bianco, grigio, scacchiera, anche dopo SLPIN/SLPOUT e scritture in
+  sleep). Da capire se dipende dall'animazione della batteria, dalle letture ADC su PB1/PB2 o
+  dal contenuto del quadrante.
 - 📌 **Indagare lo spegnimento spontaneo**: due volte la band è finita nell'aggiornatore; il
   touchlog con l'evento `S` dirà se il tasto resta "premuto" da solo.
 

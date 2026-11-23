@@ -47,7 +47,10 @@ static int str_eq(const char *a, const char *b) {
 }
 
 u32 mos_ms_since(u32 t) { return (clock_time() - t) / (sys_tick_per_us * 1000); }
-void mos_buzz(int ms) { if (buzz_cb) buzz_cb(ms); }
+static int vibration = 1;  /* IMPOSTAZIONI > VIBRAZIONE; the emergency exit buzzes anyway */
+void mos_set_vibration(int on) { vibration = on ? 1 : 0; }
+int  mos_vibration(void) { return vibration; }
+void mos_buzz(int ms) { if (buzz_cb && vibration) buzz_cb(ms); }
 void mos_notify(const u8 *pkt, int len) { if (notify_cb) notify_cb(pkt, len); }
 void mos_set_connected(int on) {
     connected = on;
@@ -138,20 +141,25 @@ static void add_back(const char *submenu, int home) {
 static void build_menu(const char *name) {
     int i, j;
     n_items = 0;
-    for (i = 0; i < mos_entry_count; i++)
-        if (str_eq(mos_entries[i].menu, name)) add_item(mos_entries[i].label, mos_entries[i].app, 0, 0);
     if (str_eq(name, "MENU")) {
-        /* one box per submenu, in the order they first appear */
+        /* bundle order: MENU apps and one box per submenu where it first appears */
         for (i = 0; i < mos_entry_count; i++) {
             const char *m = mos_entries[i].menu;
             int seen = 0;
-            if (!m[0] || str_eq(m, "MENU")) continue;
+            if (!m[0]) continue;
+            if (str_eq(m, "MENU")) {
+                add_item(mos_entries[i].label, mos_entries[i].app, 0, 0);
+                continue;
+            }
             for (j = 0; j < i; j++)
                 if (str_eq(mos_entries[j].menu, m)) seen = 1;
             if (!seen) add_item(m, 0, m, 0);
         }
         add_back(0, 1);            /* to the watch face */
     } else {
+        for (i = 0; i < mos_entry_count; i++)
+            if (str_eq(mos_entries[i].menu, name))
+                add_item(mos_entries[i].label, mos_entries[i].app, 0, 0);
         add_back("MENU", 0);       /* to the main menu */
     }
 }
