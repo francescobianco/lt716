@@ -58,8 +58,19 @@ static int link_changed(void) {
     return 0;
 }
 
+/* inside of the battery icon: w of 14 px in col, the rest black */
+static void draw_fill(int w, u16 col) {
+    if (w < 1) w = 1;
+    if (w > 14) w = 14;
+    lcd_fill(58, 4, w, 5, col);
+    if (w < 14) lcd_fill(58 + w, 4, 14 - w, 5, C_BLACK);
+}
+
+static int pump;          /* charging animation: extra px above the level, 0..14 */
+static u32 t_pump, t_sense;
+
 static void draw_battery(void) {
-    int lvl = battery_level(), chg = battery_charging(), w;
+    int lvl = battery_level(), chg = battery_charging();
     u16 col = chg ? C_BLUE : lvl >= 50 ? C_GREEN : lvl >= 25 ? C_YELLOW : C_RED;
     lcd_fill(54, 0, lcd.width - 54, 12, C_BLACK);
     lcd_fill(56, 2, 18, 1, C_WHITE);   /* battery outline + nub */
@@ -67,11 +78,21 @@ static void draw_battery(void) {
     lcd_fill(56, 2, 1, 9, C_WHITE);
     lcd_fill(73, 2, 1, 9, C_WHITE);
     lcd_fill(74, 4, 2, 5, C_WHITE);
-    w = chg ? 14 : lvl * 14 / 100;
-    if (w < 1) w = 1;
-    lcd_fill(58, 4, w, 5, col);
+    pump = 0;
+    t_pump = clock_time();
+    draw_fill(lvl * 14 / 100, col);
     last_level = lvl;
     last_charging = chg;
+}
+
+/* charging: the fill climbs from the level to full in 4 steps, then starts again */
+static void pump_battery(void) {
+    int base = battery_level() * 14 / 100, step = (14 - base + 3) / 4;
+    if (!clock_time_exceed(t_pump, 400 * 1000)) return;
+    t_pump = clock_time();
+    if (step < 1) step = 1;
+    pump = base + pump >= 14 ? 0 : pump + step;
+    draw_fill(base + pump, C_BLUE);
 }
 
 static void draw_time(void) {
@@ -116,7 +137,14 @@ static void tick(void) {
     rtc_time_t t;
     rtc_get(&t);
     if (t.min != last_min) draw_time();
+    /* screen on: read the charger every 2 s, so plugging in shows at once (battery_poll in the
+     * main loop only samples every 30 s) */
+    if (mos_screen_on() && clock_time_exceed(t_sense, 2 * 1000 * 1000)) {
+        t_sense = clock_time();
+        battery_update();
+    }
     if (battery_level() != last_level || battery_charging() != last_charging) draw_battery();
+    else if (last_charging && mos_screen_on()) pump_battery();
     if (link_changed()) draw_link();
 }
 
