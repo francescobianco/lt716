@@ -18,6 +18,31 @@ Bluetooth LE, senza l'app ufficiale.
 Oltre alla UART espone un HID "Consumer Control" (report ID 2, un codice a 16 bit da 0 a 0x28C):
 Linux lo vede come `/dev/input/eventN` col nome `716`.
 
+### Seconda band (2026-11-23)
+
+È arrivato un secondo LT716, ancora col firmware di fabbrica e **mai flashato**.
+
+| Campo | Valore |
+|---|---|
+| Nome BLE | `716`, uguale alla prima band: si distinguono solo dal MAC |
+| MAC | `FF:FF:5F:12:99:71` |
+| Manufacturer data | chiave `0x344C`, valore vuoto |
+| Servizi | Telink OTA `00010203-0405-0607-0809-0a0b0c0d1912`, UART `6e400001-b5a3-f393-e0a9-e50e24dcca9d` |
+
+Cosa è successo nei primi tentativi, con dongle e band vicini:
+
+- Gli annunci arrivano di rado e a fatica, a circa −96 dBm (la prima band, nella stessa stanza, si vede
+  ogni ~10 s allo stesso livello): la ricezione del dongle sembra il limite.
+- Un `bluetoothctl pair` si è collegato e ha risolto i servizi (vedi sopra), ma il pairing
+  non è stato completato; i tentativi successivi sono rimasti fermi su "Attempting to pair".
+- `MAC=FF:FF:5F:12:99:71 ./lt716 info` (che non richiede il pairing) è scaduto in fase di
+  scansione/connessione. **Sulla band non è stato scritto nulla.**
+
+Prossimi passi: avvicinare ancora di più la band al dongle o provare un altro adattatore,
+poi `info`, `battery` e `settings` in sola lettura. **Prima di qualunque OTA**, salvare il
+firmware di fabbrica: sulla prima band il `V15381` originale è andato perso proprio perché
+non c'era un backup (vedi [Flash del firmware](#flash-del-firmware)).
+
 ## Uso rapido
 
 ```shell
