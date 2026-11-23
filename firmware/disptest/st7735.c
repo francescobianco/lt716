@@ -115,7 +115,7 @@ static const struct { const u8 *s; u8 col, row, madctl, inv; } variants[] = {
     {0, 26, 1, 0xC8, 1},
     {s_st7735s, 26, 1, 0xC8, 1},
     {s_gc9106, 24, 0, 0xD8, 0},
-    {s_gc9107, 24, 0, 0xC8, 0},
+    {s_gc9107, 24, 0, 0x00, 0},  /* second band: key at the bottom, RGB order */
     {s_nv333023, 26, 1, 0x00, 1},
     {s_nv333025, 26, 1, 0x88, 0},
 };

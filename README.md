@@ -76,6 +76,7 @@ prima band, 0x8d74 byte).
 | DC del display | **PC6** | PC1 |
 | MOSI / CLK / CS / RST | PC3 / PC5 / PA1 / PA6 | uguale |
 | Controller | **GC9107**, RDDID `00 91 07` | ST7735S |
+| Geometria | 80×160, colonna 24, riga 0, MADCTL `0x00` (tasto in basso, ordine RGB), senza INVON | colonna 26, riga 1, MADCTL `0xC8`, INVON |
 | Retroilluminazione | **PA2**, alto = acceso (flottante = debole) | PB3 |
 | LED verde del sensore | uno di PA4, PA7, PB1, PB2, PC7, attivo basso | |
 | Alimentazione del touch (?) | uno di PB4–PB7, PC0, PC4, PC7: portati tutti bassi, PC2 è rimasto alto 10 s e disptest è uscito da solo all'aggiornatore | |
