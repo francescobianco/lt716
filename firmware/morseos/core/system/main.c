@@ -75,9 +75,26 @@
 MYFIFO_INIT(blt_rxfifo, 64, 8);
 MYFIFO_INIT(blt_txfifo, 40, 16);
 
-/* Fixed public address A4:C1:38:71:6D:D0 (Telink OUI, little-endian here). Not read from
- * or written to flash: blc_initMacAddress() would write a MAC to 0x76000 if none is found. */
+/* Public address A4:C1:38:xx:yy:zz (Telink OUI, little-endian here): the low three bytes come
+ * from the factory MAC that the stock firmware and the vendor updater use, at 0x7f100 in the
+ * calibration sector (first band FF:FF:CF:10:70:E9 -> A4:C1:38:10:70:E9). Each unit gets its
+ * own address, and it differs from the updater's, so BlueZ does not mix their GATT caches.
+ * Only read: blc_initMacAddress() is not used, it would write a MAC to 0x76000 if none is found.
+ * No factory MAC (erased sector): the old fixed A4:C1:38:71:6D:D0. */
+#define FACTORY_MAC_ADR 0x7f100
 static u8 mac_public[6] = {0xD0, 0x6D, 0x71, 0x38, 0xC1, 0xA4};
+
+static void load_mac(void) {
+    u8 f[6];
+    int i, ff = 1, zero = 1;
+    flash_read_page(FACTORY_MAC_ADR, 6, f);
+    for (i = 0; i < 3; i++) {
+        if (f[i] != 0xFF) ff = 0;
+        if (f[i] != 0x00) zero = 0;
+    }
+    if (ff || zero) return;
+    for (i = 0; i < 3; i++) mac_public[i] = f[i];
+}
 
 static const u8 tbl_advData[] = {
     0x02, 0x01, 0x06,
@@ -444,6 +461,7 @@ int main() {
 
     rf_drv_init(RF_MODE_BLE_1M);
 
+    load_mac();
     blc_ll_initBasicMCU(mac_public);
     blc_ll_initAdvertising_module(mac_public);
     blc_ll_initSlaveRole_module();

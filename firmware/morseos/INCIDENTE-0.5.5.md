@@ -111,6 +111,12 @@ azzerato solo nel ciclo principale, contatore di riavvii nel registro analogico 
 
 ## Il doppione in arrivo
 
+> **Aggiornamento 2026-11-24.** Il doppione (seconda band) è arrivato col firmware `V18185`,
+> che non è stato salvato prima dell'OTA ed è perso (vedi il README, "Seconda band"). Il
+> watchdog con il contatore di avvii era già nella 0.5.7, come chiesto qui sotto, e il
+> 2026-11-24 ha riportato la prima band all'aggiornatore dopo una serie di riavvii.
+> Il testo che segue è quello scritto prima del suo arrivo.
+
 Prima di toccarlo: rileggere questo file, implementare e provare il watchdog con il contatore di
 riavvii, e solo dopo il resto. Da ricordare che il doppione arriverà col firmware originale, che
 non abbiamo: conviene leggerne prima tutta la flash.

@@ -40,7 +40,8 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
 - ✅ **Orologio, batteria, FitPro su UART** (0.3): `lt716 settime / notify / find`.
 - ✅ **STRUMENTI > PRATICA** (0.4): lettera da scrivere col suggerimento, OK/NO, punti e serie.
 - ✅ **Emergenza a prova di bambino** (0.4): 10 s = schermo rosso "RILASCIA PER ANNULLARE",
-  20 s = aggiornatore del produttore.
+  20 s = aggiornatore del produttore. Sostituita dalla 0.5.2: 10 s premuto, rilascia, 3 tocchi
+  brevi entro 5 s (vedi sopra).
 - ✅ **Framework a moduli + manifest `bundle.ini`** (0.5): `core/`, `lib/`, `apps/`, ogni modulo con
   `module.ini` (tipo, dipendenze, sorgenti, menu, etichetta); `tools/bundle.py` risolve le
   dipendenze, scarta le librerie che nessuno usa, genera `bundle.h`, `bundle.mk` e la tabella
@@ -61,12 +62,20 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   principale segue l'ordine del bundle: INFO, STRUMENTI, IMPOSTAZIONI, TORNA.
 - ✅ **Seconda band** (0.5.8–0.5.11): display GC9107 (alimentazione PA0, DC PC6, retroilluminazione
   PA2, MADCTL `0x00`), indicatore Li-ion con fine carica, animazione di carica.
+- ✅ **Una sola immagine per tutte le band** (0.6.1): tabella `boards[]` nel driver del display,
+  rilevamento dall'ID del pannello all'avvio, `[hardware] band = auto|1|2` nel bundle o
+  `make BAND=`. INFO mostra la band. Provato sulla prima band; sulla seconda ancora da provare.
+- ✅ **MAC per unità** (0.6.2): `A4:C1:38` + gli ultimi 3 byte del MAC di fabbrica letto a
+  `0x7f100` (prima band `A4:C1:38:10:70:E9`). Da verificare sulla seconda band.
+- 📌 **dumper e disptest** usano ancora l'indirizzo fisso `A4:C1:38:71:6D:D0`: portarli al MAC
+  per unità e al driver con la tabella delle band.
 
 ## In corso
 
-- ⚠️ **Prima di tutto, sul doppione: watchdog + contatore di riavvii** (3 blocchi di fila →
+- ✅ **Watchdog + contatore di riavvii** (0.5.7, 3 avvii di fila senza 15 s sani →
   aggiornatore). Motivo e regole in [`INCIDENTE-0.5.5.md`](INCIDENTE-0.5.5.md): la 0.5.5 ha
-  bloccato la prima band (`pm_get_32k_tick()` nel ciclo principale, nessun watchdog).
+  bloccato la prima band (`pm_get_32k_tick()` nel ciclo principale, nessun watchdog). Il
+  2026-11-24 è scattato davvero sulla prima band (batteria), riportandola all'aggiornatore.
 - 📌 **Orologio in sospensione**: oggi resta indietro mentre la CPU dorme; da risolvere senza
   `pm_get_32k_tick()` (es. risincronizzazione a ogni connessione).
 

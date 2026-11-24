@@ -39,6 +39,8 @@ Usage:
   ./lt716 raw <hex> [<hex>...]       send raw packets to the UART and print the replies
 
 Env: MAC (default FF:FF:CF:10:70:E9), HCI (default hci0), RETRIES (default 5)
+     MAC and DUMPER_MAC also take a name: band1, band2 (MorseOS 0.6.2+), band1-stock,
+     band2-stock (stock firmware / updater), fixed (dumper, disptest, MorseOS <= 0.6.1)
 Dependencies: python3-dbus, python3-gi. The band must already be paired.
 """
 
@@ -54,7 +56,22 @@ import dbus
 import dbus.mainloop.glib
 from gi.repository import GLib
 
-MAC = os.environ.get("MAC", "FF:FF:CF:10:70:E9")
+# names for MAC / DUMPER_MAC: MorseOS (0.6.2+) uses A4:C1:38 + the low half of the factory MAC
+BANDS = {
+    "band1": "A4:C1:38:10:70:E9",          # first band, MorseOS (factory FF:FF:CF:10:70:E9)
+    "band2": "A4:C1:38:12:99:71",          # second band, MorseOS (factory FF:FF:5F:12:99:71)
+    "band1-stock": "FF:FF:CF:10:70:E9",    # stock firmware or vendor updater
+    "band2-stock": "FF:FF:5F:12:99:71",
+    "fixed": "A4:C1:38:71:6D:D0",          # dumper, disptest, MorseOS up to 0.6.1
+}
+
+
+def mac_env(name, default):
+    v = os.environ.get(name, default)
+    return BANDS.get(v.lower(), v).upper()
+
+
+MAC = mac_env("MAC", "FF:FF:CF:10:70:E9")
 HCI = os.environ.get("HCI", "hci0")
 RETRIES = int(os.environ.get("RETRIES", "5"))
 DEV = f"/org/bluez/{HCI}/dev_{MAC.replace(':', '_')}"
@@ -574,7 +591,7 @@ FLASH_SIZE = 0x80000
 
 def dumper_band():
     global MAC, DEV
-    MAC = os.environ.get("DUMPER_MAC", DUMPER_MAC)
+    MAC = mac_env("DUMPER_MAC", DUMPER_MAC)
     DEV = f"/org/bluez/{HCI}/dev_{MAC.replace(':', '_')}"
     return Band()
 

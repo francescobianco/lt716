@@ -3,16 +3,31 @@
 Controllo di uno smartwatch/braccialetto **LT716** (protocollo FitPro, chip Telink) da Linux via
 Bluetooth LE, senza l'app ufficiale.
 
-## Dispositivo
+## Le band
+
+Due LT716, stesso chip, stesso nome BLE `716` e schermo diverso. Stato al 2026-11-24:
+
+| | Prima band | Seconda band |
+|---|---|---|
+| MAC di fabbrica (firmware originale e aggiornatore) | `FF:FF:CF:10:70:E9` | `FF:FF:5F:12:99:71` |
+| MAC con MorseOS 0.6.2+ | `A4:C1:38:10:70:E9` | `A4:C1:38:12:99:71` (atteso, vedi sotto) |
+| Nome per `MAC=` / `DUMPER_MAC=` | `band1`, `band1-stock` | `band2`, `band2-stock` |
+| Firmware originale | `V15381` (perso, poi `V10712` di e-lab) | `V18185` (perso) |
+| Firmware ora | MorseOS 0.6.2 | l'ultimo installato è disptest v7, con l'indirizzo fisso `A4:C1:38:71:6D:D0` |
+| Display | ST7735S, DC PC1, retroilluminazione PB3 | GC9107, DC PC6, retroilluminazione PA2, alimentazione PA0 |
+
+Il MAC di fabbrica sta in flash a `0x7f100`, nel settore di calibrazione. MorseOS 0.6.2 lo legge
+(senza scrivere) e usa il prefisso Telink `A4:C1:38` più i suoi ultimi 3 byte: ogni unità ha
+un indirizzo suo, diverso da quello dell'aggiornatore. Sulla seconda band la posizione
+`0x7f100` non è ancora stata verificata; se lì non c'è nulla, resta l'indirizzo fisso.
+dumper e disptest usano ancora l'indirizzo fisso `A4:C1:38:71:6D:D0` (`fixed`), quindi con
+entrambe le band accese non si sa quale risponde: tenerne accesa una sola.
 
 | Campo | Valore |
 |---|---|
-| Nome BLE | `716` |
-| MAC | `FF:FF:CF:10:70:E9` (public) |
-| Firmware | in origine `V15381`, ora `V10712` (vedi [Flash](#flash-del-firmware)) |
-| Stringa funzioni | `001000010000011` (`2A28`, un carattere per flag) |
+| Stringa funzioni | `001000010000011` (`2A28`, un carattere per flag), uguale sulle due band |
 | Chip | Telink **TLSR8232**, flash 512 KB (MID `0x134051`); PnP ID `248A:8266` è il default dell'SDK |
-| Display | TFT 0,96" rettangolare (non il 128×128 quadrato della variante documentata da e-lab) |
+| Display | TFT 0,96" 80×160 rettangolare (non il 128×128 quadrato della variante documentata da e-lab) |
 | App ufficiale | FitPro (`cn.xiaofengkj.fitpro`) 2.10.10 |
 
 Oltre alla UART espone un HID "Consumer Control" (report ID 2, un codice a 16 bit da 0 a 0x28C):
@@ -20,7 +35,7 @@ Linux lo vede come `/dev/input/eventN` col nome `716`.
 
 ### Seconda band (2026-11-23)
 
-È arrivato un secondo LT716, ancora col firmware di fabbrica e **mai flashato**.
+È arrivato un secondo LT716 col firmware di fabbrica `V18185`, poi sovrascritto (vedi sotto).
 
 | Campo | Valore |
 |---|---|
@@ -52,7 +67,8 @@ col dumper, cioè con un OTA che sovrascriverebbe il `V18185`.
 
 Il `V18185` non è sul server FitPro (vedi [Server FitPro](#server-fitpro)); per salvarlo
 restavano SWire (aprendo la band) o un dumper scritto in `0x20000` al posto dell'aggiornatore.
-La prima band non c'è più, quindi non c'era un'unità su cui provare prima.
+Allora si credeva che la prima band non funzionasse più, quindi non c'era un'unità su cui
+provare prima. In realtà era nell'aggiornatore (vedi [Prima band: ritrovata](#prima-band-ritrovata-2026-11-24)).
 
 **2026-11-23: si è scelto di rinunciare al `V18185`.** `./lt716 ota --enter-updater` ha
 avviato l'aggiornatore (annunci molto più frequenti, ~3 al secondo; manca `2A28`), poi
@@ -99,10 +115,33 @@ Comandi di disptest (`./lt716 dumper ...`): `reg <addr> [n]`, `pin <PA0..PC7>
 float|up|down|low|high`, `watch [s]` (bit d'ingresso che cambiano), `panel [0..5|auto]`
 (ID e variante di init), `lcdpins <dc> <cs> <rst> <bl> <pwr>`. Watchdog di 4 s dalla v4.
 
+### Prima band: ritrovata (2026-11-24)
+
+La prima band, creduta rotta, era solo nell'**aggiornatore**: battmon, dopo 10 minuti lontano
+dal caricatore, ci torna da solo, e l'aggiornatore tiene lo schermo spento e ignora il tasto.
+Nelle scansioni del 2026-11-23 il "716" a `FF:FF:CF:10:70:E9` era lei. Collegandosi si vedono
+solo GAP, GATT, Device Information e il servizio OTA, senza UART: è l'aggiornatore.
+
+Poi, tutto via OTA verso l'aggiornatore:
+1. battmon aggiornato, ma compilato per la seconda band: neve colorata, poi schermo nero (i
+   comandi finivano al pannello come dati e la retroilluminazione PB3 restava spenta).
+   Nessun danno.
+2. battmon con i pin della prima band: schermata della batteria corretta.
+3. MorseOS 0.6.1 col rilevamento della band: INFO mostra `BAND 1 ST7735`. Un primo OTA si è
+   fermato al 67 % (collegamento perso, l'aggiornatore cancella e resta); il secondo è passato.
+   Dopo un riavvio la band è tornata nell'aggiornatore: il contatore di avvii (3 avvii di fila
+   senza 15 s sani) ha fatto il suo lavoro, probabilmente per la batteria. In carica, reinstallato.
+4. MorseOS 0.6.2 con il MAC per unità: risponde a `A4:C1:38:10:70:E9` (batteria 93 %).
+
+Un OTA di MorseOS (69,7 KB, 4350 pacchetti) richiede circa 3 minuti con questo adattatore.
+
 ### Backup cifrato dei dump
 
 `files/firmware/` è fuori da git. Una copia cifrata (tar.gz + gpg AES256, con `SHA256SUMS`
-dentro) è in `files/firmware-backup.tar.gz.gpg`; la password non è nel repo. Per ripristinarla:
+dentro) è in `files/firmware-backup.tar.gz.gpg`; la password non è nel repo. Contiene i dump
+della **prima band** (flash completa del 2026-11-16, copie `a` e `b`; banco 0 e aggiornatore letti
+via SWire). I dump della seconda band (`band2_flash_{1,2}.bin`) e le immagini del server
+(`files/firmware/server/`) sono stati fatti su un altro PC e **non sono nell'archivio**. Per ripristinarlo:
 
 ```shell
 gpg -d files/firmware-backup.tar.gz.gpg | tar xzf - -C files
@@ -143,7 +182,19 @@ gpg -d files/firmware-backup.tar.gz.gpg | tar xzf - -C files
 ./lt716 dumper info|dump|assets <src>|updater|reboot   # parla col nostro firmware dumper
 ```
 
-Variabili d'ambiente: `MAC`, `RETRIES` (default 5), `HCI` (default `hci0`).
+Variabili d'ambiente: `MAC`, `DUMPER_MAC`, `RETRIES` (default 5), `HCI` (default `hci0`).
+`MAC` e `DUMPER_MAC` accettano anche un nome: `band1`, `band2` (MorseOS 0.6.2+), `band1-stock`,
+`band2-stock` (firmware originale o aggiornatore), `fixed` (dumper, disptest, MorseOS fino a 0.6.1).
+Senza `MAC` si parla con la prima band all'indirizzo di fabbrica.
+
+```shell
+MAC=band1-stock ./lt716 ota firmware/morseos/_build/morseos.ota.bin --yes   # verso l'aggiornatore
+MAC=band1 ./lt716 settime                   # MorseOS sulla prima band
+DUMPER_MAC=band1 ./lt716 dumper updater     # MorseOS -> aggiornatore
+```
+
+I comandi del firmware FitPro di fabbrica (gruppo `12` ecc.) MorseOS li capisce solo in parte:
+`settime`, `notify`, `find`, `battery`. Il resto va col firmware originale.
 
 Lo script è in Python e parla con BlueZ via D-Bus (dipendenze: `python3-dbus`, `python3-gi`):
 si connette da solo se serve (e cerca il dispositivo se BlueZ non lo conosce), scrive a pezzi da
@@ -275,7 +326,7 @@ La via sicura è quindi: `./lt716 ota --enter-updater` (passo 2 senza dati), poi
 
 ## Flash del firmware
 
-Cosa è stato fatto su questa band il 2026-11-06:
+Cosa è stato fatto sulla prima band il 2026-11-06:
 
 1. Un primo tentativo di OTA del dumper verso il firmware originale si è fermato dopo 8 pacchetti
    (immagine senza padding a 16 byte); il firmware ha azzerato il proprio magic ed è ripartito
@@ -295,7 +346,7 @@ Cosa è stato fatto su questa band il 2026-11-06:
 ### Il dumper
 
 Firmware nostro (SDK 8232 di e-lab, base `examples/ble_adv`), installato e tolto tramite
-l'aggiornatore. Si annuncia come `LT716-DUMP` (`A4:C1:38:71:6D:D0`) e vibra 300 ms all'avvio;
+l'aggiornatore. Si annuncia come `LT716-DUMP` all'indirizzo fisso `A4:C1:38:71:6D:D0` e vibra 300 ms all'avvio;
 schermo spento.
 
 | Comando (`./lt716 dumper ...`) | Effetto |
@@ -313,9 +364,25 @@ firmware/build.sh dumper        # SDK e-lab (commit cebf23e) in Docker -> _build
 firmware/build.sh battmon -B           # battmon, riconosce la band all'avvio (vedi "Una build per ogni band")
 ```
 
-### Display (trovato con `firmware/disptest`)
+### battmon
 
-Il pannello 0,96" è un ST7735S 80×160 sui pin documentati da e-lab (MOSI PC3, CLK PC5, DC PC1,
+Micro firmware senza Bluetooth (`firmware/battmon/`, ~10 KB, `-Os`): mostra le tensioni di
+batteria e caricatore, quanto si è mossa la batteria dall'avvio e il tempo rimasto. Pensato per
+caricare una band con la batteria troppo bassa per un OTA, perché non accende la radio.
+
+- Schermo spento dopo 30 s senza tocchi; un tocco lo riaccende.
+- Sul caricatore resta acceso. Lontano dal caricatore, dopo 10 minuti torna da solo
+  all'aggiornatore; prima vibra due volte e scrive "UPDATER / SCHERMO SPENTO / NON E MORTA / SOLO BLE".
+- Tasto tenuto 3 s: torna subito all'aggiornatore (due vibrazioni).
+- Stesse protezioni di MorseOS 0.5.7: watchdog e contatore di avvii.
+
+Le build con `BAND=1` e `BAND=2` sono state provate sulle band; la build automatica (predefinita)
+usa lo stesso codice di rilevamento di MorseOS, ma su battmon non è ancora stata provata.
+
+### Display della prima band (trovato con `firmware/disptest`)
+
+Per la seconda band vedi [Hardware della seconda band](#hardware-della-seconda-band-trovato-con-firmwaredisptest-v4v6).
+Il pannello 0,96" della prima band è un ST7735S 80×160 sui pin documentati da e-lab (MOSI PC3, CLK PC5, DC PC1,
 RST PA6, CS PA1, retroilluminazione PB3 attiva alta; tasto touch PC2 attivo alto):
 
 | Parametro | Valore |
@@ -352,7 +419,8 @@ prima band è `(G)`: **non va flashata** senza aver capito quale variante è la 
 
 ## MorseOS
 
-Firmware nostro per l'LT716 (`firmware/morseos/`, versione 0.6): il tasto touch si usa in Morse.
+Firmware nostro per l'LT716 (`firmware/morseos/`, versione 0.6.2): il tasto touch si usa in Morse.
+Gira su entrambe le band con la stessa immagine (vedi [Una build per ogni band](#una-build-per-ogni-band)).
 Roadmap e idee: [`firmware/morseos/IDEE.md`](firmware/morseos/IDEE.md).
 
 - **Quadrante**: ora grande `00:00` a 7 segmenti, sotto `SAB 7`, in alto `BT` e batteria, in fondo
@@ -360,22 +428,30 @@ Roadmap e idee: [`firmware/morseos/IDEE.md`](firmware/morseos/IDEE.md).
 - **Accesso**: la parola Morse **TAN** (`- .- -.`) apre il menu. Il decodificatore impara il ritmo
   (medie separate di punto e linea), chiude la lettera dopo 600 ms, riconosce TAN appena completa.
 - **Menu a riquadri**: due box per schermata, quello in alto è selezionato; tocco veloce scorre,
-  tocco lungo (> 600 ms, breve vibrazione) apre. MENU: INFO, STRUMENTI, TORNA;
-  STRUMENTI: PRATICA (lettera da scrivere col suggerimento, OK/NO, punti; 3 s premuto = esci).
-- **Da PC** (`MAC=A4:C1:38:71:6D:D0`): `./lt716 settime | notify | find | battery`,
-  `./lt716 dumper touchlog`.
-- **Sicurezza**: `./lt716 dumper updater`; tasto tenuto 10 s = schermo rosso "RILASCIA PER
-  ANNULLARE", 20 s = aggiornatore del produttore.
+  tenuto (la barra si riempie in 800 ms) apre. MENU: INFO, STRUMENTI, IMPOSTAZIONI, TORNA;
+  STRUMENTI: PRATICA (lettera da scrivere col suggerimento, OK/NO, punti; 3 s premuto = esci)
+  e SENSORI (se abilitato nel bundle, non fa la scansione sulla band 2).
+  INFO: versione, band rilevata (`BAND 1 ST7735`), batteria, Bluetooth, tempo acceso, ritmo Morse.
+  IMPOSTAZIONI: velocità Morse 1–16, vibrazione.
+- **Da PC** (`MAC=band1` o `band2`, dalla 0.6.2; prima l'indirizzo fisso `A4:C1:38:71:6D:D0`):
+  `./lt716 settime | notify | find | battery`, `DUMPER_MAC=band1 ./lt716 dumper touchlog`.
+- **Uscita verso l'aggiornatore**:
+  - dal PC: `DUMPER_MAC=band1 ./lt716 dumper updater`;
+  - dal tasto: tienilo premuto 10 s (schermo rosso), **rilascia e dai 3 tocchi brevi** (< 400 ms
+    ciascuno, entro 5 s). Qualsiasi altra cosa annulla;
+  - da sola: 3 avvii di fila senza 15 s di funzionamento sano (watchdog di 4 s dalla 0.5.7).
+  Nell'aggiornatore lo schermo è spento e il tasto non fa nulla: la band sembra morta, ma si
+  annuncia col MAC di fabbrica e accetta un OTA.
 
 ### Moduli e manifest
 
 ```
 firmware/morseos/
-├── bundle.ini        manifest: [apps] e [features] da includere (y/n)
-├── core/system       BLE, GATT, comandi dumper, aggiornatore, emergenza, main loop
+├── bundle.ini        manifest: [apps], [features] (y/n), [hardware] band (auto/1/2)
+├── core/system       BLE, GATT, comandi dumper, aggiornatore, emergenza, MAC, main loop
 ├── core/ui           framework (mos.h): app, menu generati dal bundle, input, schermo
-├── lib/              display, font, morse, rtc, battery, fitpro
-└── apps/             face, info, practice, message
+├── lib/              display (con la tabella delle band), font, morse, rtc, battery, fitpro, i2cprobe
+└── apps/             face, info, practice, settings, sensors, message
 ```
 
 Ogni modulo ha un `module.ini` (`type`, `depends`, `sources`, `menu`, `label`).
@@ -385,8 +461,8 @@ nessun modulo selezionato usa (insieme ai loro servizi GATT e voci di menu), gen
 
 ```shell
 firmware/build.sh morseos       # -> firmware/morseos/_build/morseos.ota.bin
-./lt716 dumper updater          # dal firmware in esecuzione all'aggiornatore
-./lt716 ota firmware/morseos/_build/morseos.ota.bin --yes
+DUMPER_MAC=band1 ./lt716 dumper updater                    # dal firmware in esecuzione all'aggiornatore
+MAC=band1-stock ./lt716 ota firmware/morseos/_build/morseos.ota.bin --yes
 ```
 
 ### Una build per ogni band
@@ -426,7 +502,8 @@ Una nuova band si aggiunge con una riga nella tabella `boards[]`, prima della ri
 | `alarms.txt` | sveglie applicate da `./lt716 alarms` |
 | `files/protocol-notes.md` | protocollo completo ricavato dall'APK |
 | `firmware/dumper/` | sorgenti del firmware dumper |
-| `firmware/disptest/` | firmware di prova del display (geometria, colori, orientamento) |
+| `firmware/disptest/` | firmware di prova del display: pin, ID del pannello, varianti di init, pattern |
+| `firmware/battmon/` | micro firmware senza Bluetooth: tensioni di batteria e caricatore, poi aggiornatore |
 | `firmware/morseos/` | MorseOS: core, librerie e app a moduli, manifest `bundle.ini` |
 | `firmware/tools/bundle.py` | risolutore del manifest MorseOS e report delle dimensioni |
 | `firmware/build.sh`, `firmware/telink_fw.py` | build in Docker e post-processing dell'immagine (padding, `5D 02`, CRC32) |
