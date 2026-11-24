@@ -13,4 +13,7 @@ SDK_SRC = \
 	vendor/common/blt_common.c \
 	$(MOS_SDK_SRC)
 DEFINES = -D__TL_LIB_5316__ -D__PROJECT_5316_BLE_SAMPLE__ -I_gen $(addprefix -I,$(MOS_INC))
+# display wiring: [hardware] band in bundle.ini, or make BAND=0|1|2 (0 = detect at boot)
+BAND   ?= $(MOS_BAND)
+DEFINES += -DLT716_BAND=$(BAND)
 include ../../sdk/tlsr8232.mk

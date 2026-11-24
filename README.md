@@ -310,7 +310,7 @@ Il firmware rifiuta da sé ogni scrittura fuori dalla zona risorse.
 
 ```shell
 firmware/build.sh dumper        # SDK e-lab (commit cebf23e) in Docker -> _build/lt716_dumper.ota.bin
-firmware/build.sh battmon -B BAND=1   # battmon per la prima band (ST7735S: DC su PC1, retroilluminazione PB3)
+firmware/build.sh battmon -B           # battmon, riconosce la band all'avvio (vedi "Una build per ogni band")
 ```
 
 ### Display (trovato con `firmware/disptest`)
@@ -352,7 +352,7 @@ prima band è `(G)`: **non va flashata** senza aver capito quale variante è la 
 
 ## MorseOS
 
-Firmware nostro per l'LT716 (`firmware/morseos/`, versione 0.5): il tasto touch si usa in Morse.
+Firmware nostro per l'LT716 (`firmware/morseos/`, versione 0.6): il tasto touch si usa in Morse.
 Roadmap e idee: [`firmware/morseos/IDEE.md`](firmware/morseos/IDEE.md).
 
 - **Quadrante**: ora grande `00:00` a 7 segmenti, sotto `SAB 7`, in alto `BT` e batteria, in fondo
@@ -388,6 +388,35 @@ firmware/build.sh morseos       # -> firmware/morseos/_build/morseos.ota.bin
 ./lt716 dumper updater          # dal firmware in esecuzione all'aggiornatore
 ./lt716 ota firmware/morseos/_build/morseos.ota.bin --yes
 ```
+
+### Una build per ogni band
+
+Le due band note differiscono solo nei collegamenti dello schermo. Il driver
+(`lib/display/st7735.c`, copiato in `firmware/battmon/`) ha una tabella di board, ciascuna con i
+suoi pin e l'ID del controller che la identifica:
+
+| Band | Controller (RDDID) | DC | Retroilluminazione | Alimentazione |
+|---|---|---|---|---|
+| 2 | GC9107 (`00 91 07`) | PC6 | PA2 | PA0 |
+| 1 | ST7735S (qualsiasi ID, è la riserva) | PC1 | PB3 | nessuna |
+
+**Rilevamento automatico** (predefinito): al primo `lcd_init()` il firmware prova la band 2 e
+legge l'ID del pannello. Se risponde `00 91 07` la tiene, altrimenti rilascia quei pin e passa
+alla band 1. L'ordine non è casuale: i pin della band 2 sono stati pilotati per minuti sulla band 1
+(battmon per la band 2, 2026-11-24) senza danni, mentre quelli della band 1 sulla band 2 non sono
+mai stati provati, e così non vengono mai toccati. INFO mostra `BAND 1 ST7735` o `BAND 2 GC9107`.
+SENSORI sulla band 2 non fa la scansione (i suoi pin possono alimentare l'IC del touch).
+
+La scelta si fissa in `bundle.ini` (`[hardware] band = auto | 1 | 2`) o al volo:
+
+```shell
+firmware/build.sh morseos -B            # band dal bundle.ini (auto)
+firmware/build.sh morseos -B BAND=1     # solo prima band, nessuna prova all'avvio
+firmware/build.sh battmon -B BAND=2     # battmon: stessa variabile, 0 = auto (predefinito)
+```
+
+`-B` ricompila tutto: va usato quando si cambia `BAND`, perché make non vede il cambio di define.
+Una nuova band si aggiunge con una riga nella tabella `boards[]`, prima della riserva.
 
 ## File
 

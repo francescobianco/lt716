@@ -17,6 +17,17 @@ extern lcd_pins_t lcd_pins;
 #define LCD_BL   lcd_pins.bl  /* high = on */
 #define LCD_PWR  lcd_pins.pwr /* high = on */
 
+/* A board = display wiring plus the controller ID that identifies it (see st7735.c).
+ * Build with LT716_BAND=1 or 2 to fix it, 0 (default) to detect it at the first lcd_init(). */
+typedef struct {
+    u8 band;          /* 1 = first LT716 (ST7735S), 2 = second (GC9107) */
+    const char *name; /* controller, for INFO */
+    lcd_pins_t pins;
+    u8 has_id;        /* 0 = fallback, accepts any ID */
+    u8 id[3];         /* RDDID that proves this board */
+} lcd_board_t;
+extern const lcd_board_t *lcd_board;  /* the board in use, 0 before the first lcd_init() */
+
 /* MADCTL bits */
 #define MADCTL_MY  0x80
 #define MADCTL_MX  0x40

@@ -12,12 +12,27 @@ static i2cprobe_result_t res;
 
 static char hex(int v) { return "0123456789ABCDEF"[v & 15]; }
 
-static void scan(void) { i2cprobe_run(&res); }
+/* band 2: the probe pins PC4/PC7 may power the touch IC there, so never drive them */
+static int unsafe(void) { return lcd_board && lcd_board->band == 2; }
+
+static void scan(void) {
+    if (unsafe()) {
+        res.n = 0;
+        res.busy_mask = 0;
+        return;
+    }
+    i2cprobe_run(&res);
+}
 
 static void draw(void) {
     int i, y = 18;
     lcd_fill(0, 0, lcd.width, lcd.height, C_BLACK);
     mos_center_text(3, "SENSORI", 1, C_YELLOW);
+    if (unsafe()) {
+        mos_center_text(40, "NON SU", 1, C_GREY);
+        mos_center_text(52, "BAND 2", 1, C_GREY);
+        return;
+    }
     if (!res.n) mos_center_text(40, "NESSUNO", 1, C_GREY);
     for (i = 0; i < res.n && y < lcd.height - 30; i++) {
         const i2cprobe_hit_t *h = &res.hit[i];

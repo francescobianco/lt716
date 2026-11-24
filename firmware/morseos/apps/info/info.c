@@ -22,6 +22,15 @@ static void draw(void) {
     battery_update();
     lcd_fill(0, 0, lcd.width, lcd.height, C_BLACK);
     line(0, "MORSEOS " MOS_VERSION, 0, 0);
+    if (lcd_board) {                       /* "BAND 1 ST7735": board found at boot */
+        char t[16] = "BAND ", *p = t + 5;
+        const char *n = lcd_board->name;
+        *p++ = '0' + lcd_board->band;
+        *p++ = ' ';
+        while (*n) *p++ = *n++;
+        *p = 0;
+        line(1, t, 0, 0);
+    }
     line(2, "BAT ", battery_mv(), "MV");
     line(3, battery_charging() ? "CARICA " : "LIV ", battery_level(), "%");
     if (mos_connected()) {

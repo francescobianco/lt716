@@ -12,7 +12,7 @@
 /* 0.96" 80x160 panels sit at an offset in the 132x162 controller RAM. */
 /* Found on the LT716 0.96" panel with firmware/disptest (2026-11-06): full border visible,
  * colours right, key at the bottom as in the stock firmware. */
-lcd_pins_t lcd_pins = {GPIO_PC6, GPIO_PA1, GPIO_PA6, GPIO_PA2, GPIO_PA0};
+lcd_pins_t lcd_pins;
 lcd_cfg_t lcd = {26, 1, 80, 160, MADCTL_MY | MADCTL_MX | MADCTL_BGR, 1};
 
 static inline void spi_byte(u8 b) {
@@ -40,6 +40,28 @@ static void out_pin(u32 pin, int level) {
     gpio_set_output_en(pin, 1);
     gpio_write(pin, level);
 }
+
+static void release_pin(u32 pin) {
+    if (!pin) return;
+    gpio_set_output_en(pin, 0);
+    gpio_set_input_en(pin, 1);
+}
+
+/* ---- boards: the LT716 units we know differ only in the display wiring ----
+ * The signature is the panel itself: with a board's pins, RDDID must return its controller ID.
+ * Auto detection (LT716_BAND 0) tries the boards in order and keeps the first that answers;
+ * the last one is the fallback and accepts any ID. Band 2 is probed first because its pins
+ * (PA0, PC6, PA2) were driven on band 1 for minutes on 2026-11-24 (band 2 battmon) without
+ * harm, while band 1's (PC1, PB3) were never tried on band 2: there they are never touched. */
+static const lcd_board_t boards[] = {
+    {2, "GC9107", {GPIO_PC6, GPIO_PA1, GPIO_PA6, GPIO_PA2, GPIO_PA0}, 1, {0x00, 0x91, 0x07}},
+    {1, "ST7735", {GPIO_PC1, GPIO_PA1, GPIO_PA6, GPIO_PB3, 0}, 0, {0, 0, 0}},
+};
+#define BOARDS (sizeof(boards) / sizeof(boards[0]))
+#ifndef LT716_BAND
+#define LT716_BAND 0
+#endif
+const lcd_board_t *lcd_board;  /* set by the first lcd_init() */
 
 void lcd_backlight(int on) { if (LCD_BL) gpio_write(LCD_BL, on ? 1 : 0); }
 
@@ -205,16 +227,7 @@ static u8 pick_variant(void) {
     return 0;  /* unknown: our original ST7735 sequence */
 }
 
-void lcd_init(void) {
-    static const u8 frm[] = {0x01, 0x2C, 0x2D, 0x01, 0x2C, 0x2D};
-    static const u8 pw1[] = {0xA2, 0x02, 0x84}, pw2[] = {0xC5}, pw3[] = {0x0A, 0x00},
-                    pw4[] = {0x8A, 0x2A}, pw5[] = {0x8A, 0xEE}, vm[] = {0x0E}, inv[] = {0x07},
-                    col[] = {0x05};
-    static const u8 gp[] = {0x02, 0x1c, 0x07, 0x12, 0x37, 0x32, 0x29, 0x2d,
-                            0x29, 0x25, 0x2B, 0x39, 0x00, 0x01, 0x03, 0x10};
-    static const u8 gn[] = {0x03, 0x1d, 0x07, 0x06, 0x2E, 0x2C, 0x29, 0x2D,
-                            0x2E, 0x2E, 0x37, 0x3F, 0x00, 0x00, 0x02, 0x10};
-
+static void reset_and_read_id(void) {
     out_pin(LCD_BL, 0);
     /* real power cycle: registers left wrong (e.g. by bytes taken as commands) do not survive
      * an MCU reboot otherwise, since a floating PA0 keeps the panel half powered */
@@ -229,6 +242,52 @@ void lcd_init(void) {
     sleep_us(100 * 1000);
     read_id();
     hw_setup();                    /* back to hardware SPI */
+}
+
+static void use_board(const lcd_board_t *b) {
+    lcd_board = b;
+    lcd_pins = b->pins;
+}
+
+static void detect_board(void) {
+    u32 i;
+    for (i = 0; i < BOARDS; i++)
+        if (boards[i].band == LT716_BAND) {   /* fixed at build time: no probing */
+            use_board(&boards[i]);
+            reset_and_read_id();
+            return;
+        }
+    for (i = 0; i + 1 < BOARDS; i++) {
+        const lcd_board_t *b = &boards[i];
+        use_board(b);
+        reset_and_read_id();
+        if (b->has_id && lcd_id[0] == b->id[0] && lcd_id[1] == b->id[1] && lcd_id[2] == b->id[2])
+            return;
+        /* not this board: leave its pins as inputs before trying the next one */
+        out_pin(LCD_PWR, 0);
+        release_pin(LCD_DC);
+        release_pin(LCD_BL);
+        release_pin(LCD_PWR);
+    }
+    use_board(&boards[BOARDS - 1]);
+    reset_and_read_id();
+}
+
+void lcd_init(void) {
+    static const u8 frm[] = {0x01, 0x2C, 0x2D, 0x01, 0x2C, 0x2D};
+    static const u8 pw1[] = {0xA2, 0x02, 0x84}, pw2[] = {0xC5}, pw3[] = {0x0A, 0x00},
+                    pw4[] = {0x8A, 0x2A}, pw5[] = {0x8A, 0xEE}, vm[] = {0x0E}, inv[] = {0x07},
+                    col[] = {0x05};
+    static const u8 gp[] = {0x02, 0x1c, 0x07, 0x12, 0x37, 0x32, 0x29, 0x2d,
+                            0x29, 0x25, 0x2B, 0x39, 0x00, 0x01, 0x03, 0x10};
+    static const u8 gn[] = {0x03, 0x1d, 0x07, 0x06, 0x2E, 0x2C, 0x29, 0x2D,
+                            0x2E, 0x2E, 0x37, 0x3F, 0x00, 0x00, 0x02, 0x10};
+
+    if (!lcd_board) {
+        detect_board();            /* leaves the panel reset, with lcd_id read */
+    } else {
+        reset_and_read_id();
+    }
     lcd_chosen = lcd_variant < LCD_VARIANTS ? lcd_variant : pick_variant();
 
     if (lcd_chosen) {
