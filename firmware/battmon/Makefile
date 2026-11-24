@@ -13,4 +13,6 @@ SDK_SRC = \
 	drivers/5316/spi.c \
 	drivers/5316/timer.c
 DEFINES = -D__TL_LIB_5316__ -D__PROJECT_5316_BLE_SAMPLE__ -Os  # -Os: smallest image, fastest OTA
+BAND   ?= 2   # 1 = first band (ST7735S pins), 2 = second band (GC9107)
+DEFINES += -DLT716_BAND=$(BAND)
 include ../../sdk/tlsr8232.mk

@@ -2,6 +2,7 @@
 # Build a firmware under firmware/<name>/ with the TLSR8232 SDK of FitPro-LT715-TLSR8232
 # (pinned commit) in its Docker image, then make it an OTA image.
 #   firmware/build.sh dumper      -> firmware/dumper/_build/lt716_dumper.ota.bin
+#   firmware/build.sh battmon -B BAND=1   extra arguments go to make (-B: rebuild everything)
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 name=${1:-dumper}
@@ -19,7 +20,7 @@ if [[ -f $here/$name/bundle.ini ]]; then
 fi
 docker run --rm --user "$(id -u):$(id -g)" \
   -v "$elab":/src:ro -v "$here/$name":/src/examples/lt716_$name \
-  -w /src/examples/lt716_$name "$image" make
+  -w /src/examples/lt716_$name "$image" make "${@:2}"
 target=$(sed -n 's/^TARGET *= *//p' "$here/$name/Makefile")
 if [[ -f $here/$name/bundle.ini ]]; then
   python3 -I "$here/tools/bundle.py" --sizes "$here/$name" "$here/$name/_build"

@@ -12,7 +12,16 @@
 /* 0.96" 80x160 panels sit at an offset in the 132x162 controller RAM. */
 /* Found on the LT716 0.96" panel with firmware/disptest (2026-11-06): full border visible,
  * colours right, key at the bottom as in the stock firmware. */
+/* BAND=1 (make BAND=1): first band, ST7735S, DC on PC1, backlight on PB3, no power pin.
+ * Default: second band, GC9107, DC on PC6, backlight on PA2, power on PA0. */
+#ifndef LT716_BAND
+#define LT716_BAND 2
+#endif
+#if LT716_BAND == 1
+lcd_pins_t lcd_pins = {GPIO_PC1, GPIO_PA1, GPIO_PA6, GPIO_PB3, 0};
+#else
 lcd_pins_t lcd_pins = {GPIO_PC6, GPIO_PA1, GPIO_PA6, GPIO_PA2, GPIO_PA0};
+#endif
 lcd_cfg_t lcd = {26, 1, 80, 160, MADCTL_MY | MADCTL_MX | MADCTL_BGR, 1};
 
 static inline void spi_byte(u8 b) {

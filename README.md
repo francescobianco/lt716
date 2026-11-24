@@ -310,6 +310,7 @@ Il firmware rifiuta da sé ogni scrittura fuori dalla zona risorse.
 
 ```shell
 firmware/build.sh dumper        # SDK e-lab (commit cebf23e) in Docker -> _build/lt716_dumper.ota.bin
+firmware/build.sh battmon -B BAND=1   # battmon per la prima band (ST7735S: DC su PC1, retroilluminazione PB3)
 ```
 
 ### Display (trovato con `firmware/disptest`)
