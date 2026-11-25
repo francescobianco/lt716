@@ -30,6 +30,7 @@
 #include "st7735.h"
 #include "mos.h"
 #include "morse.h"
+#include "files.h"
 #ifdef MOS_HAVE_FITPRO
 #include "fitpro.h"
 #endif
@@ -114,7 +115,7 @@ static volatile u8  stream_on;
 static volatile u32 stream_addr;
 static volatile u32 stream_end;
 static volatile u8  info_pending;
-static volatile u8  reboot_pending;
+volatile u8 reboot_pending;            /* also /sys/reboot (files.c) */
 static volatile u8  updater_pending;
 static volatile u8  erase_pending;
 static volatile u32 erase_addr;
@@ -130,9 +131,10 @@ static volatile u8  redraw_pending;
 static volatile u8  reinit_pending;
 static volatile u8  sg_status_pending;  /* command 33: safeguard status */
 static volatile u8  hang_pending;       /* command 34 'HANG': test the watchdog */
-static u8 sg_boot;                      /* boots in a row, counting this one */
-static u8 sg_healthy;                   /* the counter was cleared after SG_HEALTHY_MS */
-static u8 sg_rearms;                    /* times the watchdog was found disabled and re-armed */
+/* not static: /sys/safeguard (files.c) */
+u8 sg_boot;                             /* boots in a row, counting this one */
+u8 sg_healthy;                          /* the counter was cleared after SG_HEALTHY_MS */
+u8 sg_rearms;                           /* times the watchdog was found disabled and re-armed */
 static u8 status_pkt[20];
 static int connected;
 
@@ -152,6 +154,23 @@ static void wd_feed(void) {
     reg_tmr_sta = FLD_TMR_STA_WD;
 }
 
+/* stack watermark: the free RAM between the bss and the stack (which grows down from
+ * 0x80c000) is painted at boot; /sys/stack_free counts what was never touched */
+extern u8 _end_bss_;
+#define STACK_PAINT 0xA5
+
+static void stack_paint(void) {
+    volatile u8 here;
+    u8 *p = &_end_bss_, *end = (u8 *)&here - 64;  /* keep clear of this frame */
+    while (p < end) *p++ = STACK_PAINT;
+}
+
+u32 stack_free(void) {
+    const u8 *p = &_end_bss_;
+    while (p < (const u8 *)0x80c000 && *p == STACK_PAINT) p++;
+    return p - &_end_bss_;
+}
+
 _attribute_ram_code_ void irq_handler(void) { irq_blt_sdk_handler(); }
 
 static u32 rd32(const u8 *p) { return p[0] | p[1] << 8 | p[2] << 16 | (u32)p[3] << 24; }
@@ -167,6 +186,7 @@ int dump_onWrite(rf_packet_att_write_t *p) {
     int len = p->l2capLen - 3;
     u8 *d = &p->value;
     if (len < 1) return 0;
+    if (files_cmd(d, len)) return 0;             /* 40-42: files (files.c) */
     switch (d[0]) {
     case 0x01:
         if (len >= 9) {
@@ -333,6 +353,10 @@ static void enter_updater(void) {
     start_reboot();
 }
 
+static int files_tx(const u8 *pkt, int len) {
+    return bls_att_pushNotifyData(dump_data_handle, (u8 *)pkt, len) != BLE_SUCCESS;
+}
+
 static void notify(const u8 *pkt, int len) {
     if (connected) bls_att_pushNotifyData(dump_data_handle, (u8 *)pkt, len);
 }
@@ -434,6 +458,7 @@ int main() {
     cpu_wakeup_init();
     clock_init(SYS_CLK_16M_Crystal);
     wd_arm();   /* first: from here on a hang reboots the band */
+    stack_paint();
     gpio_init();
 
     /* boots in a row without a healthy main loop: at SG_LIMIT go to the vendor updater */
@@ -558,6 +583,7 @@ int main() {
         my_batVal[0] = battery_level();
 #endif
         mos_poll(emergency_stage == 0 ? t : 0);
+        files_poll();
 #ifdef MOS_HAVE_FITPRO
         fitpro_poll();
 #endif
@@ -703,6 +729,7 @@ int main() {
             if (bls_att_pushNotifyData(dump_data_handle, pkt, sizeof(pkt)) == BLE_SUCCESS)
                 sg_status_pending = 0;
         }
+        files_pump(files_tx);
         if (name_req == 1 && mos_ms_since(t_conn) > 2000) ask_central_name();
         if (mos_ms_since(t_rssi) > 1000) {
             t_rssi = clock_time();

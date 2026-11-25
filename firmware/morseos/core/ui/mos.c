@@ -29,7 +29,7 @@
 #define C_TRACK         RGB565(40, 40, 40)
 #define HOLD_EXIT_MS    3000
 #define DEFAULT_TIMEOUT 30
-#define MAX_ITEMS       12
+#define MAX_ITEMS       8     /* main menu today: 5; RAM is short */
 
 /* a box in a menu: an app, a submenu, or "back" */
 typedef struct {

@@ -51,7 +51,7 @@ void fitpro_poll(void) {
     } else if (group == 0x12 && (cmd == 0x12 || cmd == 0x11) && dlen >= 2) {
         /* 12 12: <type> 00 00 <text>; 12 11: <state> 00 <caller>, state 0 = call ended */
         int skip = cmd == 0x12 ? 3 : 2;
-        static char text[BUF_MAX];
+        char *text = (char *)buf;  /* in place: the text moves down to the start of buf */
         int i, n = 0;
         if (!(cmd == 0x11 && data[0] == 0)) {
             for (i = skip; i < dlen && n < BUF_MAX - 1; i++) text[n++] = data[i];

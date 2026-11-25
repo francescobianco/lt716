@@ -179,6 +179,10 @@ gpg -d files/firmware-backup.tar.gz.gpg | tar xzf - -C files
 ./lt716 ota <immagine.bin>              # verifica l'immagine e costruisce i pacchetti (dry run)
 ./lt716 ota <immagine.bin> --yes        # OTA Telink vera
 ./lt716 ota --enter-updater             # entra nell'aggiornatore del produttore (dopo ~40 s)
+DUMPER_MAC=band1 ./lt716 fs ls                     # MorseOS 0.8+: i file della band
+DUMPER_MAC=band1 ./lt716 fs cat /log/battery.csv   # una serie in CSV
+DUMPER_MAC=band1 ./lt716 fs write /morse/speed 12  # una configurazione
+DUMPER_MAC=band1 ./lt716 fs mount ~/band           # la band come cartella (FUSE), Ctrl+C smonta
 ./lt716 dumper info|dump|assets <src>|updater|reboot   # parla col nostro firmware dumper
 ```
 

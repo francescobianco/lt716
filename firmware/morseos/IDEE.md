@@ -78,6 +78,20 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   Icone 32×32 per INFO, STRUMENTI, GIOCHI, IMPOSTAZIONI e la freccia indietro. Menu a tre
   riquadri, reset con pressione prolungata. **GIOCHI > RIFLESSI**: tempo di reazione, gioco
   segnaposto.
+- 🔨 **File della band** (0.8.0, da provare sulla band): quello che la band sa e permette di
+  configurare, visto dal PC come piccoli file di testo, con la sensazione di `/proc` e `/sys`
+  senza copiarne la struttura. `./lt716 fs ls|cat|write`, `./lt716 fs mount <dir>` (FUSE, binding
+  ctypes a libfuse3 in `lt716fs.py`, nessun pacchetto da installare). Sulla band
+  `core/system/files.c`: tabella fissa `{percorso, leggi, scrivi}`, un valore per file, serie in
+  CSV (`/log/battery.csv`, un campione ogni `/log/battery.interval` minuti, 48 campioni).
+  Compromessi: niente creazione/cancellazione/permessi, cartelle solo nei nomi, il contenuto
+  non è mai in un buffer (ogni pacchetto rigenera il testo e tiene la sua finestra di 16 byte),
+  tutto in RAM. Protocollo in `files.h` (comandi 40–42 sulla caratteristica del dumper).
+  `/sys/stack_free`: lo stack libero è dipinto all'avvio, il file dice quanto non è mai stato
+  toccato. **La RAM è il limite**: la 0.8.0 lascia ~1080 byte di stack (0.7.0: ~1200).
+- 📌 **File in flash**: impostazioni e serie che sopravvivono al riavvio, in un settore libero,
+  in una versione a parte (regole dell'incidente 0.5.5). Poi **/log/heart.csv** ogni 30 minuti
+  quando il sensore del battito funziona, con lo stesso meccanismo di `/log/battery.csv`.
 - 📌 **dumper e disptest** usano ancora l'indirizzo fisso `A4:C1:38:71:6D:D0`: portarli al MAC
   per unità e al driver con la tabella delle band.
 

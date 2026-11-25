@@ -35,6 +35,10 @@ Usage:
                                      into the vendor updater (bank 0x20000) after ~40 s
   ./lt716 dumper info|dump [file]|assets <src.bin>|touchlog [s]|speed <1..16>|battery|safeguard|hang|sensors|lcd ...|updater|reboot
                                      talk to the flash dumper (firmware/dumper) once it runs
+  ./lt716 fs ls|cat <path>...|write <path> <value>|mount <dir>
+                                     MorseOS 0.8+ files: what the band knows and lets you set,
+                                     as small text files (/sys, /clock, /power, /log, /morse...);
+                                     mount shows them as a directory (FUSE), Ctrl+C unmounts
   ./lt716 reset --yes                factory reset (1D)
   ./lt716 raw <hex> [<hex>...]       send raw packets to the UART and print the replies
 
@@ -1199,6 +1203,26 @@ def main(argv):
             print("asked the dumper to start the vendor updater; it reboots in a moment")
         else:
             die("usage: lt716 dumper info|dump [file]|assets <src.bin>|updater|reboot", 2)
+    elif c == "fs":
+        import lt716fs
+        sub = args[0] if args else "ls"
+        if sub not in ("ls", "cat", "write", "mount") or (sub == "cat" and len(args) < 2) or \
+                (sub == "write" and len(args) < 3) or (sub == "mount" and len(args) != 2):
+            die("usage: lt716 fs ls | cat <path>... | write <path> <value> | mount <dir>", 2)
+        try:
+            fs = lt716fs.BandFS(dumper_band(), dumper_listen, DUMP_CMD)
+            if sub == "ls":
+                for p, (i, r, wr) in fs.files.items():
+                    print(f"{'r' if r else '-'}{'w' if wr else '-'}  {p}")
+            elif sub == "cat":
+                for p in args[1:]:
+                    sys.stdout.write(fs.read(p).decode(errors="replace"))
+            elif sub == "write":
+                fs.write(args[1], " ".join(args[2:]).encode())
+            else:
+                lt716fs.mount(fs, args[1], log=lambda m: print(m, file=sys.stderr))
+        except lt716fs.FsError as e:
+            die(str(e))
     elif c == "ota" and args[:1] == ["--enter-updater"]:
         # what the stock firmware does on "00 FF"/"01 FF": clear its own magic at 0x8 and wait
         # 40 s for data; with no data packet it erases nothing and reboots into the updater
