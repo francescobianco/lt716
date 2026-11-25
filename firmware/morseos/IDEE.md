@@ -130,7 +130,14 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
 - 📌 **GIOCHI > SCACCHI** (0.6): scacchiera 80×80, caselle 10 px, sprite 8×8 dei pezzi, motore
   alfa-beta (0x88, 3–4 semimosse + catture), mosse in Morse: casella d'arrivo (`e4`), se ambigua
   chiede la partenza; lettere inglesi dei pezzi (`Nf3`). Libreria `chess_engine` separata.
-- 📌 **App BLUETOOTH** (0.7): stato del link (indirizzo, segnale, durata), dispositivi in zona
+- 🔨 **STRUMENTI > BLUETOOTH** (0.8.3, da provare sulla band): dispositivi in zona, dal più
+  forte, nome (o fine dell'indirizzo) e 4 tacche; scansione passiva della libreria Telink fra un
+  advertising e l'altro e nei vuoti della connessione (come il campione SDK
+  `TEST_SCAN_IN_ADV_AND_CONN_SLAVE_ROLE`), senza ruolo master. Accesa solo mentre lo strumento
+  è aperto o per N secondi con `/bt/scan`; `/bt/devices` in CSV. Niente cambia all'avvio:
+  le funzioni della libreria (disassemblate, tutte semplici scritture) si chiamano solo alla
+  prima scansione. Niente sospensione mentre scansiona. Lib `blescan`.
+- 📌 **App BLUETOOTH, il resto** (0.7): stato del link (indirizzo, segnale, durata), dispositivi in zona
   (scansione in advertising e in connessione), disconnetti, "connetti a…" come periferica:
   white list + advertising diretto verso il dispositivo scelto (la libreria non ha il ruolo
   master). Libreria `ble_scan`.
@@ -141,6 +148,8 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
 - 📌 **Accelerometro**: scansione I2C (sola lettura) su PA3/PC4, interrupt su PA4; identificare il
   chip (SC7A20, STK8321, DA213, QMA7981…), poi X/Y/Z a schermo, **contapassi**, **alza il polso
   per accendere**, sonno.
+- ✅ **Puntini più lenti** (0.8.3): accesi 1 s, spenti 1 s (prima mezzo secondo ciascuno).
+- ✅ **Freccia indietro curva** (0.8.3): icona a U come "torna", al posto della freccia dritta.
 - ✅ **Fine lettera più rapida** (0.8.2): pausa di fine lettera 1,5 × soglia del punto invece di
   2 × (alla velocità 9: 546 ms invece di 728), come nel Morse standard (3 unità contro una
   soglia di 2). Regolabile dal vivo: `/morse/letter_ms` (150–3000 ms, `auto` = dalla velocità).

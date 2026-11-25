@@ -46,6 +46,9 @@
 #ifdef MOS_HAVE_I2CPROBE
 #include "i2cprobe.h"
 #endif
+#ifdef MOS_HAVE_BLESCAN
+#include "blescan.h"
+#endif
 
 #define DUMPER_VERSION 4   /* 4 = MorseOS 0.1 */
 #define ASSET_START    0x29000
@@ -85,7 +88,7 @@ MYFIFO_INIT(blt_txfifo, 40, 16);
  * Only read: blc_initMacAddress() is not used, it would write a MAC to 0x76000 if none is found.
  * No factory MAC (erased sector): the old fixed A4:C1:38:71:6D:D0. */
 #define FACTORY_MAC_ADR 0x7f100
-static u8 mac_public[6] = {0xD0, 0x6D, 0x71, 0x38, 0xC1, 0xA4};
+u8 mac_public[6] = {0xD0, 0x6D, 0x71, 0x38, 0xC1, 0xA4};  /* not static: lib/blescan */
 
 static void load_mac(void) {
     u8 f[6];
@@ -592,6 +595,9 @@ int main() {
 #endif
         mos_poll(emergency_stage == 0 ? t : 0);
         files_poll();
+#ifdef MOS_HAVE_BLESCAN
+        blescan_poll();
+#endif
 #ifdef MOS_HAVE_FITPRO
         fitpro_poll();
 #endif
@@ -649,6 +655,9 @@ int main() {
             int want = !mos_screen_on() && !raw && !stream_on && !erase_pending && !commit_pending &&
                        !status_pending && !ota_busy && !emergency_stage &&
                        sg_healthy;   /* awake until the boot is healthy: SG_HEALTHY_MS is real time */
+#ifdef MOS_HAVE_BLESCAN
+            want = want && !blescan_active();   /* as in the SDK scan sample: no suspend */
+#endif
             if (want != cur_suspend) {
                 cur_suspend = want;
                 bls_pm_setSuspendMask(want ? (SUSPEND_ADV | SUSPEND_CONN) : SUSPEND_DISABLE);

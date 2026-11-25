@@ -119,10 +119,14 @@ def icon_settings():
 
 
 def icon_back():
-    """arrow pointing left"""
+    """curved back arrow (U-turn, like "return"): head on the top left pointing left, the
+    shaft goes right, turns down around a half circle and comes back left at the bottom"""
     im, d = canvas()
-    d.polygon([(8, 64), (56, 18), (56, 110)], fill=255)
-    d.rectangle((50, 50, 120, 78), fill=255)
+    t = 20                                                     # stroke
+    d.arc((46, 26, 122, 112), -90, 90, fill=255, width=t)      # the turn, on the right
+    d.rectangle((44, 26, 84, 26 + t), fill=255)                # top shaft
+    d.rectangle((26, 112 - t, 84, 112), fill=255)              # bottom shaft
+    d.polygon([(2, 36), (50, 0), (50, 72)], fill=255)          # head, pointing left
     return im
 
 

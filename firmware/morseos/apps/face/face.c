@@ -1,5 +1,5 @@
 /*
- * Watch face (home): big 00:00 with the colon blinking every second, weekday + day, BT and
+ * Watch face (home): big 00:00 with the colon blinking (1 s on, 1 s off), weekday + day, BT and
  * battery on top, the Morse being typed below. Typing the access word opens the menu.
  * The clock is chosen at build time, [options] clock in bundle.ini:
  *   font      antialiased Ubuntu Condensed Bold digits (clock_font.h, tools/mkassets.py)
@@ -18,7 +18,6 @@ static const char *const wday_it[7] = {"DOM", "LUN", "MAR", "MER", "GIO", "VEN",
 static int last_min = -1, last_level = -1, last_charging = -1, last_conn = -1, last_bars = -1;
 static char last_peer[4];
 static int last_sec = -1, colon_on = 1;
-static u32 t_sec;
 
 #ifdef MOS_OPT_CLOCK_SEGMENTS
 /* 7-segment: digits 14 x 29 at x 5, 22, 44, 61, colon at x 38 */
@@ -194,16 +193,13 @@ static void tick(void) {
     rtc_time_t t;
     rtc_get(&t);
     if (t.min != last_min) draw_time();
-    /* colon: on for the first half of every second, like a classic clock; left on in the
-     * dark so the face wakes up complete */
+    /* colon: on for a whole second, off for the next (0.8.3: was half a second each, too
+     * fast); left on in the dark so the face wakes up complete */
     if (t.sec != last_sec) {
+        int on = !(t.sec & 1) || !mos_screen_on();
         last_sec = t.sec;
-        t_sec = clock_time();
-        if (!colon_on) colon(time_color());
-        colon_on = 1;
-    } else if (colon_on && mos_screen_on() && clock_time_exceed(t_sec, 500 * 1000)) {
-        colon_on = 0;
-        colon(C_BLACK);
+        if (on != colon_on) colon(on ? time_color() : C_BLACK);
+        colon_on = on;
     }
     /* screen on: read the charger every 2 s, so plugging in shows at once (battery_poll in the
      * main loop only samples every 30 s) */

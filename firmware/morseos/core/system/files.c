@@ -11,6 +11,9 @@
 #ifdef MOS_HAVE_RTC
 #include "rtc.h"
 #endif
+#ifdef MOS_HAVE_BLESCAN
+#include "blescan.h"
+#endif
 
 #define WIN       16    /* data bytes per notification */
 #define WBUF      64
@@ -252,6 +255,45 @@ static void r_connected(void) { putn(mos_connected(), 1); nl(); }
 static void r_peer(void) { puts_(mos_peer()); nl(); }
 static void r_rssi(void) { putsn(mos_rssi()); nl(); }
 
+#ifdef MOS_HAVE_BLESCAN
+/* /bt/scan: 1 while scanning; write N to scan for N seconds (1..120), 0 to stop */
+static void r_scan(void) { putn(blescan_active(), 1); nl(); }
+static int w_scan(const char *s) {
+    int v;
+    if (!one_num(s, 0, 120, &v)) return 3;
+    if (v) blescan_request(v * 1000);
+    else blescan_stop();
+    return 0;
+}
+
+static void puthex(int v) {
+    putc_("0123456789ABCDEF"[v >> 4 & 15]);
+    putc_("0123456789ABCDEF"[v & 15]);
+}
+
+/* /bt/devices: what the scan heard, strongest first; write anything to clear it */
+static void r_devices(void) {
+    u8 idx[BLESCAN_MAX];
+    int n = blescan_sorted(idx), i, k;
+    puts_("mac,type,rssi,age_s,name\n");
+    for (i = 0; i < n; i++) {
+        const blescan_dev_t *d = blescan_dev(idx[i]);
+        for (k = 5; k >= 0; k--) {
+            puthex(d->mac[k]);
+            if (k) putc_(':');
+        }
+        puts_(d->addr_type ? ",random," : ",public,");
+        putsn(d->rssi);
+        putc_(',');
+        putn(blescan_age_s(d), 1);
+        putc_(',');
+        puts_(d->name);
+        nl();
+    }
+}
+static int w_devices(const char *s) { blescan_clear(); return 0; }
+#endif
+
 typedef struct {
     const char *path;
     void (*read)(void);
@@ -284,6 +326,10 @@ static const file_t files[] = {
     {"/bt/connected", r_connected, 0},
     {"/bt/peer", r_peer, 0},
     {"/bt/rssi", r_rssi, 0},
+#ifdef MOS_HAVE_BLESCAN
+    {"/bt/scan", r_scan, w_scan},
+    {"/bt/devices", r_devices, w_devices},
+#endif
 };
 #define N_FILES ((int)(sizeof(files) / sizeof(files[0])))
 
