@@ -29,16 +29,19 @@
 #define C_TRACK         RGB565(40, 40, 40)
 #define HOLD_EXIT_MS    3000
 #define DEFAULT_TIMEOUT 30
-#define MAX_ITEMS       8     /* main menu today: 5; RAM is short */
+#define MAX_ITEMS       12
 
-/* a box in a menu: an app, a submenu, or "back" */
+/* a box in a menu, 2 bytes (RAM is short): what it does and the bundle entry it comes from */
+enum { IT_APP, IT_SUBMENU, IT_HOME, IT_UP };  /* IT_HOME: back to the face, IT_UP: to MENU */
 typedef struct {
-    const char *label;
-    const mos_app_t *app;  /* when it opens an app */
-    const char *submenu;   /* when it opens a submenu ("MENU" = main menu) */
-    u8 home;               /* back to the watch face */
-    u8 back;               /* drawn as a back arrow instead of its label */
+    u8 kind;
+    u8 entry;  /* mos_entries[]: the app, or the first app of the submenu (its menu name) */
 } item_t;
+
+static const char *item_label(const item_t *it) {
+    return it->kind == IT_APP ? mos_entries[it->entry].label
+         : it->kind == IT_SUBMENU ? mos_entries[it->entry].menu : "";
+}
 
 static void (*buzz_cb)(int ms);
 static void (*notify_cb)(const u8 *pkt, int len);
@@ -138,19 +141,11 @@ static void touch_mark(int on) {
 
 /* ------------------------------------------------------------------ menus */
 
-static void add_item(const char *label, const mos_app_t *app, const char *submenu, int home) {
+static void add_item(int kind, int entry) {
     if (n_items == MAX_ITEMS) return;
-    items[n_items].label = label;
-    items[n_items].app = app;
-    items[n_items].submenu = submenu;
-    items[n_items].home = home;
-    items[n_items].back = 0;
+    items[n_items].kind = kind;
+    items[n_items].entry = entry;
     n_items++;
-}
-
-static void add_back(const char *submenu, int home) {
-    add_item("", 0, submenu, home);
-    if (n_items) items[n_items - 1].back = 1;
 }
 
 static void build_menu(const char *name) {
@@ -163,19 +158,19 @@ static void build_menu(const char *name) {
             int seen = 0;
             if (!m[0]) continue;
             if (str_eq(m, "MENU")) {
-                add_item(mos_entries[i].label, mos_entries[i].app, 0, 0);
+                add_item(IT_APP, i);
                 continue;
             }
             for (j = 0; j < i; j++)
                 if (str_eq(mos_entries[j].menu, m)) seen = 1;
-            if (!seen) add_item(m, 0, m, 0);
+            if (!seen) add_item(IT_SUBMENU, i);
         }
-        add_back(0, 1);            /* to the watch face */
+        add_item(IT_HOME, 0);      /* back arrow: to the watch face */
     } else {
         for (i = 0; i < mos_entry_count; i++)
             if (str_eq(mos_entries[i].menu, name))
-                add_item(mos_entries[i].label, mos_entries[i].app, 0, 0);
-        add_back("MENU", 0);       /* to the main menu */
+                add_item(IT_APP, i);
+        add_item(IT_UP, 0);        /* back arrow: to the main menu */
     }
 }
 
@@ -202,17 +197,18 @@ static void clear_around(int y, int ix, int iy, int iw, int ih) {
 /* inside of a box: the item's icon if it has one (main menu), else its label */
 static void draw_content(int slot, const item_t *it) {
     int y = box_y(slot);
-    const u8 *icon = it->back ? icon_back() : icon_for(it->label);
+    const char *label = item_label(it);
+    const u8 *icon = it->kind >= IT_HOME ? icon_back() : icon_for(label);
     if (icon) {
         int ix = BOX_X + (BOX_W - ICON_SIZE) / 2, iy = y + (BOX_H - ICON_SIZE) / 2;
         clear_around(y, ix, iy, ICON_SIZE, ICON_SIZE);
         icon_draw(ix, iy, icon, C_WHITE, C_BLACK);
     } else {
-        int sc = font_width(it->label, 2) <= BOX_W - 6 ? 2 : 1;
-        int tw = font_width(it->label, sc), th = 8 * sc;
+        int sc = font_width(label, 2) <= BOX_W - 6 ? 2 : 1;
+        int tw = font_width(label, sc), th = 8 * sc;
         int tx = BOX_X + (BOX_W - tw) / 2, ty = y + (BOX_H - th) / 2;
         clear_around(y, tx, ty, tw, th);
-        font_text(tx, ty, it->label, sc, C_WHITE, C_BLACK);
+        font_text(tx, ty, label, sc, C_WHITE, C_BLACK);
     }
 }
 
@@ -301,11 +297,12 @@ static void menu_next(void) {
 
 static void menu_select(void) {
     item_t *it = &items[sel];
-    if (it->home) mos_home();
-    else if (it->submenu) mos_menu(it->submenu);
-    else if (it->app) {
+    if (it->kind == IT_HOME) mos_home();
+    else if (it->kind == IT_UP) mos_menu("MENU");
+    else if (it->kind == IT_SUBMENU) mos_menu(mos_entries[it->entry].menu);
+    else {
         app_menu = menu_name;
-        mos_open(it->app);
+        mos_open(mos_entries[it->entry].app);
     }
 }
 

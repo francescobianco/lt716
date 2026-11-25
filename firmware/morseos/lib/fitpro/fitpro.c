@@ -6,11 +6,13 @@
 #include "fitpro.h"
 #include "rtc.h"
 
-#define BUF_MAX 340
+/* only the start of a packet is kept: header (8) + notification type (3) + the text that fits
+ * the message screen (169); longer packets are still counted to the end and acknowledged */
+#define BUF_MAX (8 + 3 + 169 + 1)
 
 static const fitpro_cb_t *cb;
 static u8 buf[BUF_MAX];
-static int nbuf;
+static int nbuf, nrecv;  /* bytes kept, bytes received */
 static volatile int ready;
 
 void fitpro_init(const fitpro_cb_t *c) { cb = c; }
@@ -19,9 +21,10 @@ int fitpro_on_write(rf_packet_att_write_t *p) {
     int len = p->l2capLen - 3, i;
     u8 *d = &p->value;
     if (len <= 0 || ready) return 0;
-    if (d[0] == 0xCD) nbuf = 0;
+    if (d[0] == 0xCD) nbuf = nrecv = 0;
     for (i = 0; i < len && nbuf < BUF_MAX; i++) buf[nbuf++] = d[i];
-    if (nbuf >= 3 && buf[0] == 0xCD && nbuf >= 3 + (buf[1] << 8 | buf[2])) ready = 1;
+    nrecv += len;
+    if (nbuf >= 3 && buf[0] == 0xCD && nrecv >= 3 + (buf[1] << 8 | buf[2])) ready = 1;
     return 0;
 }
 
@@ -63,6 +66,6 @@ void fitpro_poll(void) {
         ok = 1;  /* other settings: accepted and ignored for now */
     }
     ack(group, cmd, ok);
-    nbuf = 0;
+    nbuf = nrecv = 0;
     ready = 0;
 }

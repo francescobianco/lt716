@@ -12,6 +12,7 @@ typedef struct {
 void rtc_poll(void);
 void rtc_set(int year, int month, int day, int hour, int min, int sec);
 void rtc_get(rtc_time_t *t);
+void rtc_get_ago(u32 ago_s, rtc_time_t *t);  /* the clock ago_s seconds before now */
 int  rtc_is_set(void);
 u32  rtc_uptime(void); /* seconds since boot */
 

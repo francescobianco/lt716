@@ -88,7 +88,18 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   non è mai in un buffer (ogni pacchetto rigenera il testo e tiene la sua finestra di 16 byte),
   tutto in RAM. Protocollo in `files.h` (comandi 40–42 sulla caratteristica del dumper).
   `/sys/stack_free`: lo stack libero è dipinto all'avvio, il file dice quanto non è mai stato
-  toccato. **La RAM è il limite**: la 0.8.0 lascia ~1080 byte di stack (0.7.0: ~1200).
+  toccato. **La RAM è il limite** (16 KB: 6,8 KB di ram_code della libreria Telink, 2,3 KB
+  di code BLE e stack IRQ dell'SDK, il resto bss + stack). Stack libero: 0.7.0 ~1200 B,
+  0.8.0 ~1080 B, **0.8.1 ~1816 B** grazie a: campioni del log da 4 byte (orario ricavato
+  all'uscita da uptime + orologio, % dalla curva), FitPro che tiene solo i primi 181 byte di un
+  pacchetto ma lo conta fino in fondo, testo del messaggio 170 B, voci del menu da 2 byte,
+  scritture degli asset del dumper (comandi 10–13, `page_buf` 256 B) dietro
+  `[features] assetwrite`, spente.
+- 📌 **Ancora RAM, ma toccando lo stack BLE** (da provare in un flash a parte): coda TX
+  `MYFIFO_INIT(blt_txfifo, 40, 16)` → 8 voci = −320 B (meno notifiche in coda: dump più lento).
+  ram_code non si riduce: è tutto codice di libreria (radio, sospensione, flash).
+- ✅ **Guardia a 60 s** (0.8.1): l'avvio è "sano" dopo 60 s di ciclo principale invece di 15; la
+  CPU non va in sospensione finché non lo è, così i 60 s sono tempo reale.
 - 📌 **File in flash**: impostazioni e serie che sopravvivono al riavvio, in un settore libero,
   in una versione a parte (regole dell'incidente 0.5.5). Poi **/log/heart.csv** ogni 30 minuti
   quando il sensore del battito funziona, con lo stesso meccanismo di `/log/battery.csv`.
@@ -97,7 +108,8 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
 
 ## In corso
 
-- ✅ **Watchdog + contatore di riavvii** (0.5.7, 3 avvii di fila senza 15 s sani →
+- ✅ **Watchdog + contatore di riavvii** (0.5.7, 3 avvii di fila senza 60 s sani (15 s fino alla 0.8.0; la CPU non va in
+  sospensione finché l'avvio non è sano, così sono 60 s veri) →
   aggiornatore). Motivo e regole in [`INCIDENTE-0.5.5.md`](INCIDENTE-0.5.5.md): la 0.5.5 ha
   bloccato la prima band (`pm_get_32k_tick()` nel ciclo principale, nessun watchdog). Il
   2026-11-24 è scattato davvero sulla prima band (batteria), riportandola all'aggiornatore.

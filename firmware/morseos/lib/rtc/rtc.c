@@ -47,8 +47,11 @@ void rtc_set(int year, int month, int day, int hour, int min, int sec) {
     is_set = 1;
 }
 
-void rtc_get(rtc_time_t *t) {
-    u32 s = secs, days = s / 86400;
+void rtc_get(rtc_time_t *t) { rtc_get_ago(0, t); }
+
+/* the clock ago seconds before now (data logs keep only the uptime of a sample) */
+void rtc_get_ago(u32 ago, rtc_time_t *t) {
+    u32 s = secs > ago ? secs - ago : 0, days = s / 86400;
     int y = 2000, m = 1;
     s %= 86400;
     t->hour = s / 3600;

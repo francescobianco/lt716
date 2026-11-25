@@ -59,36 +59,19 @@ static int one_num(const char *s, int lo, int hi, int *v) {  /* the whole value 
 
 /* ------------------------------------------------------------------ battery log */
 
-typedef struct {       /* 8 bytes: RAM is short (the stack lives above the bss) */
-    u16 up;            /* uptime, minutes */
-    u16 mv;
-    u8 day;            /* band clock at the sample; bit 7 = the clock was set */
-    u8 hour, min;
-    u8 pct;            /* bit 7 = charging */
-} sample_t;
-
-static sample_t log_s[LOG_N];
-static int log_n, log_head;     /* log_head = next slot */
-static int log_interval = 30;   /* minutes, 0 = off */
+/* 4 bytes a sample (RAM is short: the stack lives above the bss): the uptime in minutes and
+ * the voltage; the time of day comes from the clock at read time, the percent from the curve */
+static u16 log_up[LOG_N];       /* uptime, minutes (wraps after 45 days) */
+static u16 log_mv[LOG_N];       /* bit 15 = charging */
+static u8 log_n, log_head;      /* log_head = next slot */
+static u16 log_interval = 30;   /* minutes, 0 = off */
 static u32 log_next = 60;       /* uptime of the next sample: the first one a minute after boot */
 
 static void log_sample(void) {
 #ifdef MOS_HAVE_BATTERY
-    sample_t *s = &log_s[log_head];
     battery_update();
-    s->up = rtc_uptime() / 60;
-    s->mv = battery_mv();
-    s->pct = (battery_level() < 0 ? 0 : battery_level()) | (battery_charging() ? 0x80 : 0);
-    s->day = 0;
-#ifdef MOS_HAVE_RTC
-    if (rtc_is_set()) {
-        rtc_time_t t;
-        rtc_get(&t);
-        s->day = t.day | 0x80;
-        s->hour = t.hour;
-        s->min = t.min;
-    }
-#endif
+    log_up[log_head] = rtc_uptime() / 60;
+    log_mv[log_head] = battery_mv() | (battery_charging() ? 0x8000 : 0);
     log_head = (log_head + 1) % LOG_N;
     if (log_n < LOG_N) log_n++;
 #endif
@@ -159,24 +142,31 @@ static void r_status(void) {  /* the words of /sys/class/power_supply/.../status
 
 static void r_log(void) {
     int i;
+    u32 now = rtc_uptime();
     puts_("uptime_min,time,mv,pct,charging\n");
     for (i = 0; i < log_n; i++) {
-        const sample_t *s = &log_s[(log_head - log_n + i + LOG_N) % LOG_N];
-        putn(s->up, 1);
+        int k = (log_head - log_n + i + LOG_N) % LOG_N;
+        u32 mv = log_mv[k] & 0x7fff, chg = log_mv[k] >> 15;
+        putn(log_up[k], 1);
         putc_(',');
-        if (s->day & 0x80) {
-            putn(s->day & 0x7f, 2);
+#ifdef MOS_HAVE_RTC
+        if (rtc_is_set()) {
+            rtc_time_t t;
+            u32 at = (u32)log_up[k] * 60;
+            rtc_get_ago(now > at ? now - at : 0, &t);
+            putn(t.day, 2);
             putc_(' ');
-            putn(s->hour, 2);
+            putn(t.hour, 2);
             putc_(':');
-            putn(s->min, 2);
+            putn(t.min, 2);
         }
+#endif
         putc_(',');
-        putn(s->mv, 1);
+        putn(mv, 1);
         putc_(',');
-        putn(s->pct & 0x7f, 1);
+        putn(battery_pct(mv, chg, 0), 1);
         putc_(',');
-        putn(s->pct >> 7, 1);
+        putn(chg, 1);
         nl();
     }
 }

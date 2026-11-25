@@ -69,7 +69,9 @@
 #define SG_REG         DEEP_ANA_REG2   /* 0x3c: "stable" retention register, unused by the SDK */
 #define SG_MAGIC       0xA0
 #define SG_LIMIT       3
-#define SG_HEALTHY_MS  15000           /* awake time: the system timer stops in suspend */
+#define SG_HEALTHY_MS  60000           /* 0.8.1: was 15 s. No suspend until then (the system
+                                          timer stops in suspend), so this is real time; the
+                                          32-bit timer wraps at 268 s, well above it */
 #define SG_WD_MS       4000
 #define SG_TICKS_PER_MS 16000          /* SYS_CLK_16M_Crystal */
 
@@ -121,7 +123,9 @@ static volatile u8  erase_pending;
 static volatile u32 erase_addr;
 static volatile u8  commit_pending;
 static volatile u32 page_addr = 0xFFFFFFFF;
+#ifdef MOS_HAVE_ASSETWRITE
 static u8 page_buf[256];
+#endif
 static volatile u8  status_pending;
 static volatile u8  fast_link_wanted;   /* dump / flash write / OTA: ask for a fast link */
 static volatile u8  ota_busy;
@@ -220,6 +224,7 @@ int dump_onWrite(rf_packet_att_write_t *p) {
     case 0x34:                                   /* 'HANG': stop the main loop, for the watchdog test */
         if (len >= 5 && d[1] == 'H' && d[2] == 'A' && d[3] == 'N' && d[4] == 'G') hang_pending = 1;
         break;
+#ifdef MOS_HAVE_ASSETWRITE  /* [features] assetwrite: flash writes of the dumper, off by default */
     case 0x10:
         fast_link_wanted = 1;
         if (len >= 5 && !erase_pending && !commit_pending) {
@@ -244,6 +249,7 @@ int dump_onWrite(rf_packet_att_write_t *p) {
     case 0x13:
         if (!erase_pending) commit_pending = 1;
         break;
+#endif
     case 0x20:
         if (len >= 7 && d[3] && d[4]) {
             lcd.colstart = d[1];
@@ -300,6 +306,7 @@ static void pump_stream(void) {
     }
 }
 
+#ifdef MOS_HAVE_ASSETWRITE
 static void set_status(u8 op, u8 st, u32 addr) {
     wr32(status_pkt, 0xFFFFFFFE);
     status_pkt[4] = 'S';
@@ -340,6 +347,7 @@ static void do_commit(void) {
     }
     set_status(0x13, 0, a);
 }
+#endif
 
 /* Go back to the vendor updater in bank 0x20000, as the stock firmware does. */
 static void enter_updater(void) {
@@ -639,7 +647,8 @@ int main() {
         {
             static int cur_suspend = -1, cur_padwake = 1;
             int want = !mos_screen_on() && !raw && !stream_on && !erase_pending && !commit_pending &&
-                       !status_pending && !ota_busy && !emergency_stage;
+                       !status_pending && !ota_busy && !emergency_stage &&
+                       sg_healthy;   /* awake until the boot is healthy: SG_HEALTHY_MS is real time */
             if (want != cur_suspend) {
                 cur_suspend = want;
                 bls_pm_setSuspendMask(want ? (SUSPEND_ADV | SUSPEND_CONN) : SUSPEND_DISABLE);
@@ -735,8 +744,10 @@ int main() {
             t_rssi = clock_time();
             mos_set_rssi(link_rssi_dbm());
         }
+#ifdef MOS_HAVE_ASSETWRITE
         if (erase_pending) do_erase();
         if (commit_pending) do_commit();
+#endif
         if (status_pending) {
             if (bls_att_pushNotifyData(dump_data_handle, status_pkt, sizeof(status_pkt)) == BLE_SUCCESS)
                 status_pending = 0;
