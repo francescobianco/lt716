@@ -4,8 +4,8 @@
  * The clock is chosen at build time, [options] clock in bundle.ini:
  *   font      antialiased Ubuntu Condensed Bold digits (clock_font.h, tools/mkassets.py)
  *   segments  the 7-segment digits of MorseOS 0.3-0.6
- * Holding the key past the reset threshold clears the input: a red RESET bar shows it until
- * the release.
+ * Holding the key past the reset threshold clears the input: the text line turns red and a
+ * wiper sweeps it away from right to left (mos_wipe).
  */
 #include "mos.h"
 #include "battery.h"
@@ -229,11 +229,10 @@ static void word(const char *w) {
     mos_center_text(104, w, 2, C_WHITE);
 }
 
-/* long press: input cleared. A red bar across the text while the key is down; on release the
- * area is cleared and typing starts again */
+/* long press: input cleared, shown by the wiper on the text line; typing starts again after
+ * the release (the wiper finishes by itself) */
 static void reset(int held) {
-    lcd_fill(0, 104, lcd.width, 16, held ? C_RED : C_BLACK);
-    if (held) font_text((lcd.width - font_width("RESET", 2)) / 2, 104, "RESET", 2, C_WHITE, C_RED);
+    if (held) mos_wipe(104, 16);
     mos_pattern_at(126, "", C_YELLOW, 1);
 }
 

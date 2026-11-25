@@ -23,8 +23,10 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   quando la pressione supera la soglia del punto si allunga a linea. Al rilascio diventa giallo.
 - **Pressione prolungata = reset dell'input** (0.7.0, sostituisce la raffica di 4 tocchi della
   0.5.2): oltre la soglia (3 × punto, tra 1,2 e 2,5 s) l'input si azzera subito, con due
-  micro-vibrazioni e una barra rossa RESET mentre il tasto è ancora giù; la digitazione riprende
+  micro-vibrazioni e un segnale visivo mentre il tasto è ancora giù; la digitazione riprende
   solo dopo il rilascio, così prolungare la pressione non assume altri significati.
+  Dalla 0.8.2 niente scritta RESET: la riga del testo diventa rossa e una spazzola bianca la
+  attraversa da destra a sinistra come un tergicristallo, lasciandola nera (`mos_wipe`).
 - **Menu a tre riquadri** (0.7.0): il fuoco parte dal primo, scende a ogni tocco, resta al centro
   mentre la lista scorre e arriva al terzo solo sull'ultima voce; un tocco sull'ultima torna in
   cima. Se non serve scorrere si ridisegnano solo i due contorni. Barra di scorrimento a destra

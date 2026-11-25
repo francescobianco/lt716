@@ -72,7 +72,9 @@ static void tick(void) {
 static void pattern(const char *pat) { mos_pattern_at(96, pat, C_YELLOW, 1); }
 
 /* long press: the letter being typed is dropped; typing again after the release */
-static void reset(int held) { draw_result(held ? "RESET" : 0, C_RED); }
+static void reset(int held) {
+    if (held) mos_wipe(108, 16);
+}
 
 static void letter(char c) {
     char t[6] = {'N', 'O', ' ', c, 0};

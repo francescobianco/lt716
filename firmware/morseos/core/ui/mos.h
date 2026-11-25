@@ -87,5 +87,9 @@ void mos_emergency_warning(int stage, int taps);  /* 0 off, 1 held, 2 counting t
 char *mos_num(char *p, u32 v, int width);  /* decimal, zero-padded to width; returns the end */
 void mos_center_text(int y, const char *s, int scale, u16 fg);
 void mos_pattern_at(int y, const char *pat, u16 color, int centered);  /* dots and dashes */
+/* input reset signal: the band (0, y, full width, h) turns red, then a white wiper blade sweeps
+ * it from right to left and leaves it black. Animated by mos_poll(); stops if the screen
+ * changes (another app, the menu, the emergency screen) */
+void mos_wipe(int y, int h);
 
 #endif

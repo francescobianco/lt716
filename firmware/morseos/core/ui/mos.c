@@ -134,6 +134,38 @@ void mos_pattern_at(int y, const char *pat, u16 col, int centered) {
     }
 }
 
+/* ------------------------------------------------------------------ reset wiper */
+
+#define WIPE_RED_MS 120   /* red alone first */
+#define WIPE_MS     320   /* then the blade crosses the screen */
+#define WIPE_BLADE  3
+
+static int wipe_on, wipe_y, wipe_h, wipe_x;
+static u32 t_wipe;
+
+void mos_wipe(int y, int h) {
+    lcd_fill(0, y, lcd.width, h, C_RED);
+    wipe_y = y;
+    wipe_h = h;
+    wipe_x = lcd.width;
+    t_wipe = clock_time();
+    wipe_on = 1;
+}
+
+static void wipe_step(void) {
+    u32 ms = mos_ms_since(t_wipe);
+    int x;
+    if (ms < WIPE_RED_MS) return;
+    ms -= WIPE_RED_MS;
+    x = ms >= WIPE_MS ? -WIPE_BLADE : lcd.width - (int)(ms * (lcd.width + WIPE_BLADE) / WIPE_MS);
+    if (x >= wipe_x) return;
+    /* black behind the blade (on its right), the blade at x, red still ahead on the left */
+    lcd_fill(x + WIPE_BLADE, wipe_y, wipe_x - x, wipe_h, C_BLACK);
+    if (x + WIPE_BLADE > 0) lcd_fill(x, wipe_y, WIPE_BLADE, wipe_h, C_WHITE);
+    wipe_x = x;
+    if (x <= -WIPE_BLADE) wipe_on = 0;
+}
+
 static void touch_mark(int on) {
     if (in_menu) return;  /* the menu has the gauge, and its last box reaches the bottom */
     lcd_fill(lcd.width / 2 - 4, lcd.height - 7, 8, 5, on ? C_YELLOW : C_GREY);
@@ -317,6 +349,7 @@ void mos_redraw(void) {
 }
 
 void mos_open(const mos_app_t *app) {
+    wipe_on = 0;
     morse_reset();
     in_menu = 0;
     active = app;
@@ -330,6 +363,7 @@ void mos_home(void) {
 }
 
 void mos_menu(const char *name) {
+    wipe_on = 0;
     morse_reset();
     menu_name = name;
     build_menu(name);
@@ -366,6 +400,7 @@ static void red_line(int y, const char *s, u16 col) {
 /* stage 0 = gone (redraw), 1 = key still held, 2 = released: taps counted so far */
 void mos_emergency_warning(int stage, int taps) {
     emergency = stage;
+    wipe_on = 0;
     if (!stage) {
         mos_redraw();
         return;
@@ -489,6 +524,8 @@ void mos_poll(int touched) {
     }
 
     morse_poll(screen_on && morse_target() && !consumed ? touched : 0);
+
+    if (wipe_on && screen_on) wipe_step();
 
     /* the home screen keeps itself up to date in the dark too */
     if (!in_menu && active && active->tick && (screen_on || active == home_app)) active->tick();
