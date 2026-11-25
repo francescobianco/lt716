@@ -40,7 +40,9 @@ static const char *const table[] = {
 };
 
 /* dot/dash threshold per speed level 1..16: 1000 ms down to 150 ms, each level ~12 %
- * faster (geometric). Letter gap = 2 x threshold, reset = 3 x threshold in 1.2..2.5 s. */
+ * faster (geometric). Letter gap = 1.5 x threshold (0.8.2, was 2 x: 3 units against a dot/dash
+ * threshold of 2 units, as in standard Morse), or a fixed value from /morse/letter_ms;
+ * reset = 3 x threshold in 1.2..2.5 s. */
 static const u16 speed_table[SPEED_LEVELS] = {
     1000, 881, 777, 684, 603, 531, 468, 413, 364, 320, 282, 249, 219, 193, 170, 150,
 };
@@ -48,6 +50,7 @@ static const u16 speed_table[SPEED_LEVELS] = {
 static const morse_cb_t *cb;
 static int speed = SPEED_DEFAULT;
 static u32 threshold_ms, letter_gap_ms, reset_ms;
+static u32 letter_fixed_ms;     /* 0 = from the speed */
 static int live_dash;           /* the element being pressed has passed the threshold */
 static int resetting;           /* this press has reset the input: ignore it until released */
 static int pressed;
@@ -84,7 +87,7 @@ void morse_set_speed(int level) {
     if (level > SPEED_LEVELS) level = SPEED_LEVELS;
     speed = level;
     threshold_ms = speed_table[level - 1];
-    letter_gap_ms = 2 * threshold_ms;
+    letter_gap_ms = letter_fixed_ms ? letter_fixed_ms : threshold_ms * 3 / 2;
     reset_ms = 3 * threshold_ms;
     if (reset_ms < RESET_MIN_MS) reset_ms = RESET_MIN_MS;
     if (reset_ms > RESET_MAX_MS) reset_ms = RESET_MAX_MS;
@@ -93,6 +96,13 @@ void morse_set_speed(int level) {
 int morse_speed(void) { return speed; }
 u32 morse_threshold_ms(void) { return threshold_ms; }
 u32 morse_reset_ms(void) { return reset_ms; }
+u32 morse_letter_ms(void) { return letter_gap_ms; }
+int morse_letter_fixed(void) { return letter_fixed_ms != 0; }
+
+void morse_set_letter_ms(u32 ms) {  /* 0 = back to 1.5 x the dot threshold */
+    letter_fixed_ms = ms;
+    morse_set_speed(speed);
+}
 
 static void show_live(int dash) {
     char disp[MAX_PATTERN + 2];

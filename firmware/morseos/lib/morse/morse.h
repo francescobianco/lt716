@@ -30,5 +30,8 @@ void morse_set_speed(int level);  /* 1 = very slow .. 16 = very fast, default 9 
 int  morse_speed(void);
 u32  morse_threshold_ms(void);    /* presses shorter than this are dots */
 u32  morse_reset_ms(void);        /* presses this long reset the input */
+u32  morse_letter_ms(void);       /* a gap this long ends the letter */
+int  morse_letter_fixed(void);    /* 1 = set with morse_set_letter_ms, 0 = from the speed */
+void morse_set_letter_ms(u32 ms); /* fixed letter gap, 0 = 1.5 x the dot threshold */
 
 #endif

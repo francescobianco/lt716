@@ -139,6 +139,9 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
 - 📌 **Accelerometro**: scansione I2C (sola lettura) su PA3/PC4, interrupt su PA4; identificare il
   chip (SC7A20, STK8321, DA213, QMA7981…), poi X/Y/Z a schermo, **contapassi**, **alza il polso
   per accendere**, sonno.
+- ✅ **Fine lettera più rapida** (0.8.2): pausa di fine lettera 1,5 × soglia del punto invece di
+  2 × (alla velocità 9: 546 ms invece di 728), come nel Morse standard (3 unità contro una
+  soglia di 2). Regolabile dal vivo: `/morse/letter_ms` (150–3000 ms, `auto` = dalla velocità).
 - 📌 **Tuning Morse**: ritoccare soglie col touchlog quando l'utente è "meno arrugginito".
 
 - 📌 **Impostazioni salvate in flash**: oggi VELOCITA e VIBRAZIONE tornano a 9 / SI a ogni

@@ -226,6 +226,20 @@ static int w_speed(const char *s) {
 static void r_threshold(void) { putn(morse_threshold_ms(), 1); nl(); }
 static void r_reset_ms(void) { putn(morse_reset_ms(), 1); nl(); }
 
+/* the gap that ends a letter: a number of ms fixes it, "auto" = 1.5 x dot_ms (follows speed) */
+static void r_letter(void) {
+    putn(morse_letter_ms(), 1);
+    if (!morse_letter_fixed()) puts_(" auto");
+    nl();
+}
+static int w_letter(const char *s) {
+    int v;
+    if (s[0] == 'a' && s[1] == 'u' && s[2] == 't' && s[3] == 'o' && !s[4]) v = 0;
+    else if (!one_num(s, 150, 3000, &v)) return 3;
+    morse_set_letter_ms(v);
+    return 0;
+}
+
 static void r_vibration(void) { putn(mos_vibration(), 1); nl(); }
 static int w_vibration(const char *s) {
     int v;
@@ -265,6 +279,7 @@ static const file_t files[] = {
     {"/morse/speed", r_speed, w_speed},
     {"/morse/dot_ms", r_threshold, 0},
     {"/morse/reset_ms", r_reset_ms, 0},
+    {"/morse/letter_ms", r_letter, w_letter},
     {"/ui/vibration", r_vibration, w_vibration},
     {"/bt/connected", r_connected, 0},
     {"/bt/peer", r_peer, 0},
