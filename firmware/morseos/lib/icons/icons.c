@@ -16,5 +16,5 @@ const u8 *icon_for(const char *label) {
 const u8 *icon_back(void) { return icon_back_bits; }
 
 void icon_draw(int x, int y, const u8 *icon, u16 fg, u16 bg) {
-    lcd_blit4(x, y, ICON_SIZE, ICON_SIZE, icon, fg, bg);
+    lcd_blit_rle(x, y, ICON_SIZE, ICON_SIZE, icon, fg, bg);
 }

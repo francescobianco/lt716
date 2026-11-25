@@ -364,17 +364,26 @@ static u16 blend(u16 fg, u16 bg, int a) {  /* a = 0..15 */
     return r << 11 | g << 5 | b;
 }
 
-void lcd_blit4(int x, int y, int w, int h, const u8 *bits, u16 fg, u16 bg) {
+/* run-length coded 4-bit bitmap (tools/mkassets.py): 00nnnnnn n+1 x bg, 01nnnnnn n+1 x fg,
+ * 1vvvvnnn n+1 x level v; decoded straight into the window, no buffer. Whole bitmap on
+ * screen only (no clipping): drawn nowhere otherwise. */
+void lcd_blit_rle(int x, int y, int w, int h, const u8 *code, u16 fg, u16 bg) {
     u16 pal[16];
-    int i, r, c, x0 = x, y0 = y, cw = w, ch = h;
+    u32 n = (u32)w * h;
+    int i, x0 = x, y0 = y, cw = w, ch = h;
+    if (x < 0 || y < 0 || x + w > lcd.width || y + h > lcd.height) return;
     if (!window(&x0, &y0, &cw, &ch)) return;
     for (i = 0; i < 16; i++) pal[i] = blend(fg, bg, i);
-    for (r = y0 - y; r < y0 - y + ch; r++)
-        for (c = x0 - x; c < x0 - x + cw; c++) {
-            u32 n = (u32)r * w + c;
-            u16 col = pal[(n & 1) ? bits[n >> 1] & 15 : bits[n >> 1] >> 4];
+    while (n) {
+        u8 b = *code++;
+        u32 k = b < 0x80 ? (b & 0x3F) + 1 : (b & 7) + 1;
+        u16 col = pal[b < 0x80 ? (b & 0x40 ? 15 : 0) : b >> 3 & 15];
+        if (k > n) k = n;
+        n -= k;
+        while (k--) {
             spi_byte(col >> 8);
             spi_byte(col);
         }
+    }
     gpio_write(LCD_CS, 1);
 }

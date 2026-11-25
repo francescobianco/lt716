@@ -17,3 +17,10 @@ DEFINES = -D__TL_LIB_5316__ -D__PROJECT_5316_BLE_SAMPLE__ -I_gen $(addprefix -I,
 BAND   ?= $(MOS_BAND)
 DEFINES += -DLT716_BAND=$(BAND)
 include ../../sdk/tlsr8232.mk
+# optimisation of the MorseOS sources only (the SDK drivers stay as they were tested, -O0):
+# make APP_OPT=-Os
+APP_OPT ?=
+$(BUILD_DIR)/app/%.o: CCFLAGS += $(APP_OPT)
+# measurement only, not used: the SDK drivers optimised too (make SDK_OPT=-Os)
+SDK_OPT ?=
+$(BUILD_DIR)/sdk/%.o: CCFLAGS += $(SDK_OPT)

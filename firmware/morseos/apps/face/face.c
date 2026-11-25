@@ -2,7 +2,7 @@
  * Watch face (home): big 00:00 with the colon blinking (1 s on, 1 s off), weekday + day, BT and
  * battery on top, the Morse being typed below. Typing the access word opens the menu.
  * The clock is chosen at build time, [options] clock in bundle.ini:
- *   font      antialiased Ubuntu Condensed Bold digits (clock_font.h, tools/mkassets.py)
+ *   font      antialiased Ubuntu Condensed Bold digits (clock_font.h, run-length coded)
  *   segments  the 7-segment digits of MorseOS 0.3-0.6
  * Holding the key past the reset threshold clears the input: the text line turns red and a
  * wiper sweeps it away from right to left (mos_wipe).
@@ -59,7 +59,7 @@ static void colon(u16 fg) {
 }
 #else
 static void digit(int x, int y, int d, u16 fg) {
-    lcd_blit4(x, y, CLOCK_W, CLOCK_H, CLOCK_DIGIT(d % 10), fg, C_BLACK);
+    lcd_blit_rle(x, y, CLOCK_W, CLOCK_H, CLOCK_DIGIT(d % 10), fg, C_BLACK);
 }
 
 /* two 4 x 4 dots with rounded corners, at the height of a colon in the font */

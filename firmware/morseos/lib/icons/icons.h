@@ -1,4 +1,4 @@
-/* MorseOS menu icons, 32 x 32 px, 4-bit antialiased (tools/mkassets.py). */
+/* MorseOS menu icons, 32 x 32 px, 4-bit antialiased, run-length coded (tools/mkassets.py). */
 #ifndef ICONS_H
 #define ICONS_H
 

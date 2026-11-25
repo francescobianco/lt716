@@ -97,6 +97,16 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   pacchetto ma lo conta fino in fondo, testo del messaggio 170 B, voci del menu da 2 byte,
   scritture degli asset del dumper (comandi 10–13, `page_buf` 256 B) dietro
   `[features] assetwrite`, spente.
+- ✅ **Asset compressi** (0.8.3): cifre e icone in RLE con il livello nel codice
+  (`00nnnnnn` sfondo, `01nnnnnn` pieno, `1vvvvnnn` sfumatura v), 5790 → 3038 B senza perdita,
+  decodificati direttamente nella finestra SPI (`lcd_blit_rle`). Provati e scartati: letterali
+  impacchettati (3921 B, i bordi sono gruppi di 1–2 pixel), XOR con la riga sopra (aiuta le
+  cifre, peggiora le icone), 2 bit (−0,7 KB in più ma bordi meno morbidi).
+- 📌 **`-Os` sul codice MorseOS** (misurato 2026-11-25): il progetto compila senza `-O`, cioè
+  `-O0`. `make APP_OPT="-Os -fno-strict-aliasing"` solo sulle nostre sorgenti: bin da 83,5 a
+  70,0 KB (−13,5 KB); i driver SDK restano `-O0` come provati (con `-Os` anche loro: altri
+  −4,3 KB, ma `flash.c` gira in RAM con tempi precisi: no). Da flashare da solo, dopo la 0.8.3,
+  rileggendo `/sys/stack_free` (gli inline possono cambiare l'uso dello stack).
 - 📌 **Ancora RAM, ma toccando lo stack BLE** (da provare in un flash a parte): coda TX
   `MYFIFO_INIT(blt_txfifo, 40, 16)` → 8 voci = −320 B (meno notifiche in coda: dump più lento).
   ram_code non si riduce: è tutto codice di libreria (radio, sospensione, flash).
