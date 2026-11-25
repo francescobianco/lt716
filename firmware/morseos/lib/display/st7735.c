@@ -324,15 +324,15 @@ void lcd_init(void) {
     sleep_us(100 * 1000);
 }
 
-void lcd_fill(int x, int y, int w, int h, u16 color) {
+/* clip to the screen, set the CASET/RASET window and start RAMWR (CS left low); 0 = nothing */
+static int window(int *px, int *py, int *pw, int *ph) {
     u8 ca[4], ra[4];
-    int x0, y0, x1, y1;
-    u32 n;
+    int x = *px, y = *py, w = *pw, h = *ph, x0, y0, x1, y1;
     if (x < 0) { w += x; x = 0; }
     if (y < 0) { h += y; y = 0; }
     if (x + w > lcd.width) w = lcd.width - x;
     if (y + h > lcd.height) h = lcd.height - y;
-    if (w <= 0 || h <= 0) return;
+    if (w <= 0 || h <= 0) return 0;
     x0 = x + lcd.colstart;
     x1 = x0 + w - 1;
     y0 = y + lcd.rowstart;
@@ -343,9 +343,38 @@ void lcd_fill(int x, int y, int w, int h, u16 color) {
     cmd_args(0x2B, ra, 4);         /* RASET */
     gpio_write(LCD_CS, 0);
     cmd(0x2C);                     /* RAMWR */
+    *px = x; *py = y; *pw = w; *ph = h;
+    return 1;
+}
+
+void lcd_fill(int x, int y, int w, int h, u16 color) {
+    u32 n;
+    if (!window(&x, &y, &w, &h)) return;
     for (n = (u32)w * h; n; n--) {
         spi_byte(color >> 8);
         spi_byte(color);
     }
+    gpio_write(LCD_CS, 1);
+}
+
+static u16 blend(u16 fg, u16 bg, int a) {  /* a = 0..15 */
+    int r = ((bg >> 11) * (15 - a) + (fg >> 11) * a) / 15;
+    int g = (((bg >> 5) & 63) * (15 - a) + ((fg >> 5) & 63) * a) / 15;
+    int b = ((bg & 31) * (15 - a) + (fg & 31) * a) / 15;
+    return r << 11 | g << 5 | b;
+}
+
+void lcd_blit4(int x, int y, int w, int h, const u8 *bits, u16 fg, u16 bg) {
+    u16 pal[16];
+    int i, r, c, x0 = x, y0 = y, cw = w, ch = h;
+    if (!window(&x0, &y0, &cw, &ch)) return;
+    for (i = 0; i < 16; i++) pal[i] = blend(fg, bg, i);
+    for (r = y0 - y; r < y0 - y + ch; r++)
+        for (c = x0 - x; c < x0 - x + cw; c++) {
+            u32 n = (u32)r * w + c;
+            u16 col = pal[(n & 1) ? bits[n >> 1] & 15 : bits[n >> 1] >> 4];
+            spi_byte(col >> 8);
+            spi_byte(col);
+        }
     gpio_write(LCD_CS, 1);
 }

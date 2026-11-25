@@ -1,6 +1,11 @@
 /*
- * Watch face (home): big 7-segment 00:00, weekday + day, BT and battery on top, the Morse
- * being typed below. Typing the access word opens the menu.
+ * Watch face (home): big 00:00 with the colon blinking every second, weekday + day, BT and
+ * battery on top, the Morse being typed below. Typing the access word opens the menu.
+ * The clock is chosen at build time, [options] clock in bundle.ini:
+ *   font      antialiased Ubuntu Condensed Bold digits (clock_font.h, tools/mkassets.py)
+ *   segments  the 7-segment digits of MorseOS 0.3-0.6
+ * Holding the key past the reset threshold clears the input: a red RESET bar shows it until
+ * the release.
  */
 #include "mos.h"
 #include "battery.h"
@@ -12,9 +17,29 @@
 static const char *const wday_it[7] = {"DOM", "LUN", "MAR", "MER", "GIO", "VEN", "SAB"};
 static int last_min = -1, last_level = -1, last_charging = -1, last_conn = -1, last_bars = -1;
 static char last_peer[4];
+static int last_sec = -1, colon_on = 1;
+static u32 t_sec;
 
+#ifdef MOS_OPT_CLOCK_SEGMENTS
+/* 7-segment: digits 14 x 29 at x 5, 22, 44, 61, colon at x 38 */
+#define TIME_Y  40
+#define TIME_H  29
+#define COLON_X 38
+#define COLON_W 3
+static const u8 digit_x[4] = {5, 22, 44, 61};
+#else
+#include "clock_font.h"
+/* font: 19 px cells at x 0, 19, 42, 61, colon in the 4 px between them */
+#define TIME_Y  37
+#define TIME_H  CLOCK_H
+#define COLON_X 38
+#define COLON_W 4
+static const u8 digit_x[4] = {0, 19, 42, 61};
+#endif
+
+#ifdef MOS_OPT_CLOCK_SEGMENTS
 /* 7-segment digit, 14 x 29 px, segment thickness 3 */
-static void digit7(int x, int y, int d, u16 fg) {
+static void digit(int x, int y, int d, u16 fg) {
     static const u8 seg[10] = {0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F};
     const int w = 14, t = 3, v = 10;
     u8 m = seg[d % 10];
@@ -27,6 +52,30 @@ static void digit7(int x, int y, int d, u16 fg) {
     if (m & 0x20) lcd_fill(x, y + t, t, v, fg);                             /* f */
     if (m & 0x40) lcd_fill(x + t, y + t + v, w - 2 * t, t, fg);             /* g */
 }
+
+static void colon(u16 fg) {
+    lcd_fill(COLON_X, TIME_Y, COLON_W, TIME_H, C_BLACK);
+    lcd_fill(COLON_X, TIME_Y + 8, 3, 3, fg);
+    lcd_fill(COLON_X, TIME_Y + 18, 3, 3, fg);
+}
+#else
+static void digit(int x, int y, int d, u16 fg) {
+    lcd_blit4(x, y, CLOCK_W, CLOCK_H, CLOCK_DIGIT(d % 10), fg, C_BLACK);
+}
+
+/* two 4 x 4 dots with rounded corners, at the height of a colon in the font */
+static void colon(u16 fg) {
+    static const u8 dy[2] = {CLOCK_H * 3 / 10, CLOCK_H * 7 / 10 - 4};
+    int i;
+    lcd_fill(COLON_X, TIME_Y, COLON_W, TIME_H, C_BLACK);
+    for (i = 0; i < 2; i++) {
+        lcd_fill(COLON_X + 1, TIME_Y + dy[i], 2, 4, fg);
+        lcd_fill(COLON_X, TIME_Y + dy[i] + 1, 4, 2, fg);
+    }
+}
+#endif
+
+static u16 time_color(void) { return rtc_is_set() ? C_WHITE : C_GREY; }
 
 static void draw_link(void) {
     const char *who = mos_peer();
@@ -102,15 +151,13 @@ static void draw_time(void) {
     rtc_time_t t;
     char d[12], *p = d;
     const char *w;
-    const int y = 40, x = 5;
-    u16 col = rtc_is_set() ? C_WHITE : C_GREY;
+    u16 col = time_color();
     rtc_get(&t);
-    digit7(x, y, t.hour / 10, col);
-    digit7(x + 17, y, t.hour % 10, col);
-    lcd_fill(x + 33, y + 8, 3, 3, col);   /* colon */
-    lcd_fill(x + 33, y + 18, 3, 3, col);
-    digit7(x + 39, y, t.min / 10, col);
-    digit7(x + 56, y, t.min % 10, col);
+    digit(digit_x[0], TIME_Y, t.hour / 10, col);
+    digit(digit_x[1], TIME_Y, t.hour % 10, col);
+    colon(colon_on ? col : C_BLACK);
+    digit(digit_x[2], TIME_Y, t.min / 10, col);
+    digit(digit_x[3], TIME_Y, t.min % 10, col);
     for (w = rtc_is_set() ? wday_it[t.wday] : "---"; *w;) *p++ = *w++;
     *p++ = ' ';
     mos_num(p, rtc_is_set() ? t.day : 0, 1);
@@ -125,9 +172,16 @@ static void word(const char *w);
 static void draw(void) {
     draw_link();
     draw_battery();
-    lcd_fill(0, 12, lcd.width, 28, C_BLACK);
-    lcd_fill(0, 40, lcd.width, 30, C_BLACK);
-    lcd_fill(0, 70, lcd.width, 12, C_BLACK);
+    lcd_fill(0, 12, lcd.width, TIME_Y - 12, C_BLACK);
+#ifdef MOS_OPT_CLOCK_SEGMENTS                  /* the gaps around the digits */
+    lcd_fill(0, TIME_Y, 5, TIME_H, C_BLACK);
+    lcd_fill(19, TIME_Y, 3, TIME_H, C_BLACK);
+    lcd_fill(36, TIME_Y, 2, TIME_H, C_BLACK);
+    lcd_fill(41, TIME_Y, 3, TIME_H, C_BLACK);
+    lcd_fill(58, TIME_Y, 3, TIME_H, C_BLACK);
+    lcd_fill(75, TIME_Y, lcd.width - 75, TIME_H, C_BLACK);
+#endif
+    lcd_fill(0, TIME_Y + TIME_H, lcd.width, 82 - TIME_Y - TIME_H, C_BLACK);
     draw_time();                               /* digits and the date line (82..97) */
     lcd_fill(0, 98, lcd.width, 6, C_BLACK);
     word("");                                  /* 104..119 */
@@ -140,6 +194,17 @@ static void tick(void) {
     rtc_time_t t;
     rtc_get(&t);
     if (t.min != last_min) draw_time();
+    /* colon: on for the first half of every second, like a classic clock; left on in the
+     * dark so the face wakes up complete */
+    if (t.sec != last_sec) {
+        last_sec = t.sec;
+        t_sec = clock_time();
+        if (!colon_on) colon(time_color());
+        colon_on = 1;
+    } else if (colon_on && mos_screen_on() && clock_time_exceed(t_sec, 500 * 1000)) {
+        colon_on = 0;
+        colon(C_BLACK);
+    }
     /* screen on: read the charger every 2 s, so plugging in shows at once (battery_poll in the
      * main loop only samples every 30 s) */
     if (mos_screen_on() && clock_time_exceed(t_sense, 2 * 1000 * 1000)) {
@@ -164,6 +229,14 @@ static void word(const char *w) {
     mos_center_text(104, w, 2, C_WHITE);
 }
 
+/* long press: input cleared. A red bar across the text while the key is down; on release the
+ * area is cleared and typing starts again */
+static void reset(int held) {
+    lcd_fill(0, 104, lcd.width, 16, held ? C_RED : C_BLACK);
+    if (held) font_text((lcd.width - font_width("RESET", 2)) / 2, 104, "RESET", 2, C_WHITE, C_RED);
+    mos_pattern_at(126, "", C_YELLOW, 1);
+}
+
 static void access(void) {
     mos_buzz(60);
     sleep_us(80 * 1000);
@@ -172,5 +245,5 @@ static void access(void) {
 }
 
 const mos_app_t app_face = {
-    "face", MOS_F_HOME | MOS_F_MORSE, 15, 0, draw, tick, 0, 0, pattern, word, access,
+    "face", MOS_F_HOME | MOS_F_MORSE, 15, 0, draw, tick, 0, 0, pattern, word, access, reset,
 };

@@ -66,5 +66,8 @@ void lcd_backlight(int on);
 void lcd_sleep(int sleep);     /* SLPIN / SLPOUT: the panel keeps its image (and accepts
                                   memory writes) while asleep, at a few uA */
 void lcd_fill(int x, int y, int w, int h, u16 color);
+/* 4-bit antialiased bitmap (tools/mkassets.py): row-major, 2 px per byte, high nibble first,
+ * 0 = bg .. 15 = fg; clipped to the screen, each pixel written once */
+void lcd_blit4(int x, int y, int w, int h, const u8 *bits, u16 fg, u16 bg);
 
 #endif

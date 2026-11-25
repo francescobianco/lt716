@@ -4,12 +4,13 @@
  * set over BLE (core/system command 0x30):
  *   press <  30 ms                 ignored (glitch)
  *   press <  threshold             dot, otherwise dash
- *   press >  cancel                cancel the word
+ *   press >= reset                 reset (0.7): while the key is still down the input is
+ *                                  cleared and the app shows it (reset callback, held = 1);
+ *                                  the rest of that press is ignored, and typing starts
+ *                                  again only after the release (held = 0), so holding
+ *                                  longer cannot mean anything else
  *   gap   >  letter gap            end of letter; as soon as the word ends with TAN: access
  *   gap   >  word end              the word is dropped
- *   4 taps within 700 ms           erase: a frantic burst of taps (any length, about the
- *                                  fastest a finger goes) clears what was typed at once;
- *                                  no real letter is typed that fast
  * While the key is down the pattern callback gets the letter so far plus the element being
  * pressed: '*' while it is still a dot, '=' once it has become a dash (the "tutor").
  * Every press and every decoded letter/word is reported as a DATA notification:
@@ -24,8 +25,8 @@
 #define WORD_END_MIN  4000
 #define SPEED_DEFAULT 9
 #define SPEED_LEVELS  16
-#define ERASE_TAPS    4
-#define ERASE_MS      700
+#define RESET_MIN_MS  1200  /* reset threshold = 3 x dot threshold, within these limits */
+#define RESET_MAX_MS  2500
 #define MAX_PATTERN   7
 #define MAX_WORD      8
 
@@ -39,16 +40,16 @@ static const char *const table[] = {
 };
 
 /* dot/dash threshold per speed level 1..16: 1000 ms down to 150 ms, each level ~12 %
- * faster (geometric). Letter gap = 2 x threshold, cancel = max(1500, 5 x threshold). */
+ * faster (geometric). Letter gap = 2 x threshold, reset = 3 x threshold in 1.2..2.5 s. */
 static const u16 speed_table[SPEED_LEVELS] = {
     1000, 881, 777, 684, 603, 531, 468, 413, 364, 320, 282, 249, 219, 193, 170, 150,
 };
 
 static const morse_cb_t *cb;
 static int speed = SPEED_DEFAULT;
-static u32 threshold_ms, letter_gap_ms, cancel_ms;
+static u32 threshold_ms, letter_gap_ms, reset_ms;
 static int live_dash;           /* the element being pressed has passed the threshold */
-static int erasing;             /* this press completes an erase burst */
+static int resetting;           /* this press has reset the input: ignore it until released */
 static int pressed;
 static u32 t_edge, last_gap_ms;
 static char pattern[MAX_PATTERN + 1];
@@ -78,31 +79,20 @@ static void send(char kind, const u8 *p, int n) {
     if (cb->notify) cb->notify(pkt, sizeof(pkt));
 }
 
-static u32 tap_tick[ERASE_TAPS];  /* start of the last presses, oldest first */
-static int ntaps;
-
-/* a new press started: is it the last of a frantic burst? */
-static int burst(void) {
-    int i;
-    if (ntaps == ERASE_TAPS) {
-        for (i = 1; i < ERASE_TAPS; i++) tap_tick[i - 1] = tap_tick[i];
-        ntaps--;
-    }
-    tap_tick[ntaps++] = clock_time();
-    return ntaps == ERASE_TAPS && ms_since(tap_tick[0]) < ERASE_MS;
-}
-
 void morse_set_speed(int level) {
     if (level < 1) level = 1;
     if (level > SPEED_LEVELS) level = SPEED_LEVELS;
     speed = level;
     threshold_ms = speed_table[level - 1];
     letter_gap_ms = 2 * threshold_ms;
-    cancel_ms = 5 * threshold_ms < 1500 ? 1500 : 5 * threshold_ms;
+    reset_ms = 3 * threshold_ms;
+    if (reset_ms < RESET_MIN_MS) reset_ms = RESET_MIN_MS;
+    if (reset_ms > RESET_MAX_MS) reset_ms = RESET_MAX_MS;
 }
 
 int morse_speed(void) { return speed; }
 u32 morse_threshold_ms(void) { return threshold_ms; }
+u32 morse_reset_ms(void) { return reset_ms; }
 
 static void show_live(int dash) {
     char disp[MAX_PATTERN + 2];
@@ -176,7 +166,6 @@ void morse_poll(int touched) {
     if (touched != pressed) {
         if (touched) {
             last_gap_ms = dt;          /* press starts: dt was a gap */
-            if (burst()) erasing = 1;
             live_dash = 0;
             if (npat < MAX_PATTERN) show_live(0);
         } else {                       /* press ends: dt was its length */
@@ -187,25 +176,18 @@ void morse_poll(int touched) {
                 if (cb->pattern) cb->pattern(pattern);
                 return;
             }
-            if (dt > cancel_ms) {
-                morse_reset();
-                e = 'X';
+            if (resetting) {           /* end of the reset press: typing starts again */
+                resetting = 0;
+                e = 'C';
+                if (cb->reset) cb->reset(0);
             } else {
                 e = dt < threshold_ms ? '.' : '-';
+                if (npat < MAX_PATTERN) {
+                    pattern[npat++] = e;
+                    pattern[npat] = 0;
+                }
+                if (cb->pattern) cb->pattern(pattern);
             }
-            if (e != 'X' && npat < MAX_PATTERN) {
-                pattern[npat++] = e;
-                pattern[npat] = 0;
-            }
-            if (erasing) {              /* end of the press that completed a burst */
-                erasing = 0;
-                ntaps = 0;
-                send('W', (const u8 *)"", 0);
-                morse_reset();
-                if (cb->erased) cb->erased();
-                e = 'C';
-            }
-            if (cb->pattern) cb->pattern(pattern);
             msg[0] = e;
             msg[1] = dt;
             msg[2] = dt >> 8;
@@ -222,7 +204,12 @@ void morse_poll(int touched) {
     }
 
     if (pressed) {
-        if (!live_dash && dt >= threshold_ms && npat < MAX_PATTERN) {
+        if (!resetting && dt >= reset_ms) {
+            resetting = 1;             /* reset now, shown while the key is still down */
+            send('W', (const u8 *)"", 0);
+            morse_reset();
+            if (cb->reset) cb->reset(1);
+        } else if (!resetting && !live_dash && dt >= threshold_ms && npat < MAX_PATTERN) {
             live_dash = 1;             /* the tutor grows from dot to dash */
             show_live(1);
         }

@@ -21,9 +21,14 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
 - **Uscita da uno strumento**: tenere premuto 3 s, con vibrazione.
 - **Rettangolo guida (tutor)** (0.5.2): mentre premi, un rettangolo bianco largo come un punto;
   quando la pressione supera la soglia del punto si allunga a linea. Al rilascio diventa giallo.
-- **Raffica di tocchi = cancella** (0.5.2): 4 tocchi qualsiasi in meno di 0,7 s (quasi il ritmo
-  massimo di un dito) cancellano subito quello che si è scritto. Conta la frenesia, non il
-  timing dei punti: deve durare molto meno dell'azzeramento automatico. Due micro-vibrazioni.
+- **Pressione prolungata = reset dell'input** (0.7.0, sostituisce la raffica di 4 tocchi della
+  0.5.2): oltre la soglia (3 × punto, tra 1,2 e 2,5 s) l'input si azzera subito, con due
+  micro-vibrazioni e una barra rossa RESET mentre il tasto è ancora giù; la digitazione riprende
+  solo dopo il rilascio, così prolungare la pressione non assume altri significati.
+- **Menu a tre riquadri** (0.7.0): il fuoco parte dal primo, scende a ogni tocco, resta al centro
+  mentre la lista scorre e arriva al terzo solo sull'ultima voce; un tocco sull'ultima torna in
+  cima. Se non serve scorrere si ridisegnano solo i due contorni. Barra di scorrimento a destra
+  con la posizione della voce a fuoco. Menu principale a icone (`lib/icons`).
 - **Emergenza** (0.5.2): 10 s premuto = schermo rosso; poi rilascia e 3 tocchi brevi entro 5 s.
   Un contatto fisso non può farla scattare; tasto premuto > 30 s = ignorato finché non si
   rilascia (evento `S` nel touchlog).
@@ -67,6 +72,12 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   `make BAND=`. INFO mostra la band. Provato sulla prima band; sulla seconda ancora da provare.
 - ✅ **MAC per unità** (0.6.2): `A4:C1:38` + gli ultimi 3 byte del MAC di fabbrica letto a
   `0x7f100` (prima band `A4:C1:38:10:70:E9`). Da verificare sulla seconda band.
+- ✅ **MorseOS 0.7.0**: quadrante con cifre a font (Ubuntu Condensed Bold antialiasato, 4 bit,
+  `tools/mkassets.py`) e due punti che lampeggiano ogni secondo; il vecchio orologio a segmenti
+  resta scegliendo `[options] clock = segments` in `bundle.ini` (scelta di build, non a runtime).
+  Icone 32×32 per INFO, STRUMENTI, GIOCHI, IMPOSTAZIONI e la freccia indietro. Menu a tre
+  riquadri, reset con pressione prolungata. **GIOCHI > RIFLESSI**: tempo di reazione, gioco
+  segnaposto.
 - 📌 **dumper e disptest** usano ancora l'indirizzo fisso `A4:C1:38:71:6D:D0`: portarli al MAC
   per unità e al driver con la tabella delle band.
 

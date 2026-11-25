@@ -18,7 +18,8 @@ typedef struct {
     void (*word)(const char *word);         /* letters so far ("" = cleared) */
     void (*access)(void);                   /* the word ends with MORSE_ACCESS_WORD */
     void (*letter)(char c);                 /* every decoded letter, incl. the specials */
-    void (*erased)(void);                   /* a burst of 6 dots cleared the input */
+    void (*reset)(int held);                /* a long press cleared the input: 1 = key still
+                                               down, 0 = released (typing starts again) */
 } morse_cb_t;
 
 void morse_init(const morse_cb_t *cb);
@@ -28,5 +29,6 @@ const char *morse_code_of(char c); /* ".-" for A, 0 if unknown */
 void morse_set_speed(int level);  /* 1 = very slow .. 16 = very fast, default 9 */
 int  morse_speed(void);
 u32  morse_threshold_ms(void);    /* presses shorter than this are dots */
+u32  morse_reset_ms(void);        /* presses this long reset the input */
 
 #endif

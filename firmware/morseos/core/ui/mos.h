@@ -4,8 +4,9 @@
  * An app is a mos_app_t. The bundle (tools/bundle.py) lists the selected apps in
  * mos_entries[] with the menu they belong to; the menus are built from that table:
  *   main menu  = apps with menu "MENU" and one box per other menu name (STRUMENTI,
- *                GIOCHI, ...), in bundle order, then TORNA
- *   submenu    = its apps, then INDIETRO
+ *                GIOCHI, ...), in bundle order, then TORNA; drawn as icons (lib/icons)
+ *   submenu    = its apps, then INDIETRO; labels (an icon if lib/icons has one)
+ * Three boxes per screen with a scroll bar; the list wraps around.
  * The home app (flag MOS_F_HOME, the watch face) is shown on wake-up and on timeouts.
  */
 #ifndef MOS_H
@@ -38,6 +39,8 @@ typedef struct mos_app {
     void (*pattern)(const char *pat); /* Morse elements of the current letter */
     void (*word)(const char *word);   /* Morse letters so far */
     void (*access)(void);             /* Morse access word typed */
+    void (*reset)(int held);          /* Morse input reset by a long press: 1 = still held
+                                         (show it), 0 = released, typing starts again */
 } mos_app_t;
 
 typedef struct {

@@ -71,6 +71,9 @@ static void tick(void) {
 
 static void pattern(const char *pat) { mos_pattern_at(96, pat, C_YELLOW, 1); }
 
+/* long press: the letter being typed is dropped; typing again after the release */
+static void reset(int held) { draw_result(held ? "RESET" : 0, C_RED); }
+
 static void letter(char c) {
     char t[6] = {'N', 'O', ' ', c, 0};
     if (next_pending) return;
@@ -92,4 +95,5 @@ static void letter(char c) {
 
 const mos_app_t app_practice = {
     "practice", MOS_F_MORSE | MOS_F_HOLD_EXIT, 30, enter, draw, tick, 0, letter, pattern, 0, 0,
+    reset,
 };
