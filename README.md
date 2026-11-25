@@ -443,7 +443,7 @@ Roadmap e idee: [`firmware/morseos/IDEE.md`](firmware/morseos/IDEE.md).
   - dal PC: `DUMPER_MAC=band1 ./lt716 dumper updater`;
   - dal tasto: tienilo premuto 10 s (schermo rosso), **rilascia e dai 3 tocchi brevi** (< 400 ms
     ciascuno, entro 5 s). Qualsiasi altra cosa annulla;
-  - da sola: 3 avvii di fila senza 15 s di funzionamento sano (watchdog di 4 s dalla 0.5.7).
+  - da sola: 3 avvii di fila senza 60 s di funzionamento sano (15 s fino alla 0.8.0) (watchdog di 4 s dalla 0.5.7).
   Nell'aggiornatore lo schermo è spento e il tasto non fa nulla: la band sembra morta, ma si
   annuncia col MAC di fabbrica e accetta un OTA.
 
