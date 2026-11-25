@@ -14,6 +14,9 @@
 #ifdef MOS_HAVE_BLESCAN
 #include "blescan.h"
 #endif
+#ifdef MOS_HAVE_ALARMS
+#include "alarms.h"
+#endif
 
 #define WIN       16    /* data bytes per notification */
 #define WBUF      64
@@ -294,6 +297,26 @@ static void r_devices(void) {
 static int w_devices(const char *s) { blescan_clear(); return 0; }
 #endif
 
+#ifdef MOS_HAVE_ALARMS
+/* /clock/alarms: "HH:MM DAYS" per line; write a line to add or change one, "-HH:MM" to remove
+ * it, nothing (": > alarms") to clear them all */
+static void r_alarms(void) {
+    int i;
+    char d[28];
+    for (i = 0; i < alarms_count(); i++) {
+        const alarm_t *a = alarms_get(i);
+        putn(a->hour, 2);
+        putc_(':');
+        putn(a->min, 2);
+        putc_(' ');
+        alarms_days_text(a->days, d);
+        puts_(d);
+        nl();
+    }
+}
+static int w_alarms(const char *s) { return alarms_line(s) ? 3 : 0; }
+#endif
+
 typedef struct {
     const char *path;
     void (*read)(void);
@@ -310,6 +333,9 @@ static const file_t files[] = {
     {"/sys/reboot", 0, w_reboot},
 #ifdef MOS_HAVE_RTC
     {"/clock/now", r_now, w_now},
+#ifdef MOS_HAVE_ALARMS
+    {"/clock/alarms", r_alarms, w_alarms},
+#endif
 #endif
 #ifdef MOS_HAVE_BATTERY
     {"/power/voltage_mv", r_voltage, 0},

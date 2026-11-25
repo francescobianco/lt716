@@ -6,8 +6,8 @@
  * Built on the flash dumper / display test firmware: same BLE services and commands
  * (dump, info, lcd, updater), same two ways back to the vendor updater:
  *   - BLE command 05 'UPDT'
- *   - touch key held 10 s (red screen), released, then tapped 3 times within 5 s; no BLE
- *     needed, and a key stuck down cannot trigger it (ignored after 30 s)
+ *   - touch key held 60 s (red screen), released, then tapped 3 times within 5 s; no BLE
+ *     needed, and a key stuck down cannot trigger it (ignored after 90 s)
  * The UI framework is core/ui (mos.c); apps are in apps/, libraries in lib/.
  */
 
@@ -49,6 +49,10 @@
 #ifdef MOS_HAVE_BLESCAN
 #include "blescan.h"
 #endif
+#ifdef MOS_HAVE_ALARM
+#include "alarms.h"
+#include "alarm.h"
+#endif
 
 #define DUMPER_VERSION 4   /* 4 = MorseOS 0.1 */
 #define ASSET_START    0x29000
@@ -56,10 +60,11 @@
 #define FLASH_SIZE     0x80000
 #define PIN_MOTOR      GPIO_PA5  /* active high, plain GPIO (docs/hardware.md) */
 #define PIN_TOUCH      GPIO_PC2  /* active high while touched */
-#define EMERGENCY_WARN_MS  10000  /* held this long: red screen */
+#define EMERGENCY_WARN_MS  60000  /* held this long: red screen (0.8.4, was 10 s) */
 #define EMERGENCY_TAP_MS   400    /* then release and tap 3 times, each shorter than this */
 #define EMERGENCY_ARMED_MS 5000   /* ... with at most this between them */
-#define STUCK_MS           30000  /* a key down this long is ignored until released */
+#define STUCK_MS           90000  /* a key down this long is ignored until released: above
+                                         EMERGENCY_WARN_MS, or the emergency could never start */
 
 /* Safeguard (0.5.7, after the 0.5.5 incident, see INCIDENTE-0.5.5.md):
  *  - hardware watchdog, armed right after clock_init() and fed only by the main loop: a hang
@@ -536,6 +541,10 @@ int main() {
 #ifdef MOS_HAVE_MESSAGE
         fp_cb.message = message_show;
 #endif
+#ifdef MOS_HAVE_ALARMS
+        fp_cb.alarms_set = alarms_from_fitpro;
+        fp_cb.alarms_get = alarms_to_fitpro;
+#endif
         fitpro_init(&fp_cb);
     }
 #endif
@@ -595,6 +604,9 @@ int main() {
 #endif
         mos_poll(emergency_stage == 0 ? t : 0);
         files_poll();
+#ifdef MOS_HAVE_ALARM
+        if (!emergency_stage && alarms_due()) alarm_ring();
+#endif
 #ifdef MOS_HAVE_BLESCAN
         blescan_poll();
 #endif
@@ -603,7 +615,7 @@ int main() {
 #endif
 
         /* emergency exit, with or without BLE, immune to a key stuck down:
-         * held 10 s -> red screen; release; 3 short taps within 5 s -> vendor updater */
+         * held 60 s -> red screen; release; 3 short taps within 5 s -> vendor updater */
         if (emergency_stage == 0 && t && held > EMERGENCY_WARN_MS) {
             emergency_stage = 1;
             buzz(400);

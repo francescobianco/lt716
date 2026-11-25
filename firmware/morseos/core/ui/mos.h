@@ -63,6 +63,7 @@ void mos_set_rssi(int dbm);
 int  mos_rssi(void);                  /* dBm of the link */
 int  mos_signal_bars(void);           /* 0..4 */
 void mos_buzz(int ms);
+void mos_buzz_always(int ms);    /* also with IMPOSTAZIONI > VIBRAZIONE off (alarms) */
 void mos_set_vibration(int on);  /* off: mos_buzz() is silent (the emergency exit is not) */
 int  mos_vibration(void);
 void mos_notify(const u8 *pkt, int len);

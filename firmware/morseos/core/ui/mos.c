@@ -68,6 +68,7 @@ static int vibration = 1;  /* IMPOSTAZIONI > VIBRAZIONE; the emergency exit buzz
 void mos_set_vibration(int on) { vibration = on ? 1 : 0; }
 int  mos_vibration(void) { return vibration; }
 void mos_buzz(int ms) { if (buzz_cb && vibration) buzz_cb(ms); }
+void mos_buzz_always(int ms) { if (buzz_cb) buzz_cb(ms); }
 void mos_notify(const u8 *pkt, int len) { if (notify_cb) notify_cb(pkt, len); }
 void mos_set_connected(int on) {
     connected = on;

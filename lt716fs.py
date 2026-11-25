@@ -3,8 +3,8 @@
 BandFS talks the protocol: the list of files (file 0), read, write. mount() shows the band as
 a directory through FUSE, with a small ctypes binding to libfuse3 (no Python package needed):
 files have size 0 and are read with direct I/O, like /proc; a write is sent when the file is
-written (the value is one short line, one write() call), so `echo 99 > speed` fails with
-"Invalid argument"; `: > file` (truncate, nothing written) sends an empty value on close.
+written (one write() call; several lines are sent as one value each), so `echo 99 > speed`
+fails with "Invalid argument"; `: > file` (truncate, nothing written) sends an empty value on close.
 """
 
 import ctypes
@@ -289,8 +289,10 @@ def mount(fs, mountpoint, log=print):
         p = path.decode()
         v = (pending.get(p) or b"")[:off] + ctypes.string_at(buf, size)
         pending[p] = None
-        fs.write(p, v)              # now: a bad value fails the write() of the shell
-        log(f"{p} <- {v.decode(errors='replace').strip()}")
+        lines = [ln for ln in v.split(b"\n") if ln.strip()] or [v]
+        for ln in lines:            # several lines: one value each (e.g. /clock/alarms)
+            fs.write(p, ln)         # now: a bad value fails the write() of the shell
+            log(f"{p} <- {ln.decode(errors='replace').strip()}")
         return size
 
     @guard

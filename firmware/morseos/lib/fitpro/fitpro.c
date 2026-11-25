@@ -48,6 +48,25 @@ void fitpro_poll(void) {
         rtc_set(2000 + (v >> 26), v >> 22 & 0xF, v >> 17 & 0x1F, v >> 12 & 0x1F, v >> 6 & 0x3F,
                 v & 0x3F);
         ok = 1;
+    } else if (group == 0x12 && cmd == 0x02) {                /* alarms: the whole list */
+        if (cb->alarms_set) cb->alarms_set(data, dlen);
+        ok = 1;
+    } else if (group == 0x18) {                               /* read the alarms */
+        /* CD <len u16 = total-3> 18 01 10 <datalen u16> <5 bytes per alarm>, in 20-byte pieces */
+        u8 r[8 + 8 * 5];
+        int dl = cb->alarms_get ? cb->alarms_get(r + 8) : 0, i, tot = 8 + dl;
+        r[0] = 0xCD;
+        r[1] = (tot - 3) >> 8;
+        r[2] = tot - 3;
+        r[3] = 0x18;
+        r[4] = 0x01;
+        r[5] = 0x10;
+        r[6] = dl >> 8;
+        r[7] = dl;
+        for (i = 0; i < tot && cb->tx; i += 20) cb->tx(r + i, tot - i < 20 ? tot - i : 20);
+        nbuf = nrecv = 0;
+        ready = 0;
+        return;                                               /* the reply is the answer */
     } else if (group == 0x12 && cmd == 0x0B) {                /* find band */
         if (cb->find) cb->find();
         ok = 1;

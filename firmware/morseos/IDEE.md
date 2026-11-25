@@ -31,9 +31,9 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   mentre la lista scorre e arriva al terzo solo sull'ultima voce; un tocco sull'ultima torna in
   cima. Se non serve scorrere si ridisegnano solo i due contorni. Barra di scorrimento a destra
   con la posizione della voce a fuoco. Menu principale a icone (`lib/icons`).
-- **Emergenza** (0.5.2): 10 s premuto = schermo rosso; poi rilascia e 3 tocchi brevi entro 5 s.
-  Un contatto fisso non può farla scattare; tasto premuto > 30 s = ignorato finché non si
-  rilascia (evento `S` nel touchlog).
+- **Emergenza** (0.5.2; 60 s dalla 0.8.4, prima 10 s): 60 s premuto = schermo rosso; poi
+  rilascia e 3 tocchi brevi entro 5 s. Un contatto fisso non può farla scattare; tasto premuto
+  > 90 s (prima 30 s) = ignorato finché non si rilascia (evento `S` nel touchlog).
 
 ## Fatto
 
@@ -158,6 +158,13 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
 - 📌 **Accelerometro**: scansione I2C (sola lettura) su PA3/PC4, interrupt su PA4; identificare il
   chip (SC7A20, STK8321, DA213, QMA7981…), poi X/Y/Z a schermo, **contapassi**, **alza il polso
   per accendere**, sonno.
+- 🔨 **Sveglie** (0.8.4, da provare sulla band): fino a 8, ora + giorni. Dal PC con
+  `./lt716 alarms` (alarms.txt, FitPro `12 02`; `--show` rilegge con `18`) o con il file
+  `/clock/alarms` (`07:00 MON FRI` aggiunge/cambia, `-07:00` toglie, vuoto = tutte via, più
+  righe in una scrittura = una per volta). Quando suona: schermo acceso, SVEGLIA e l'ora, una
+  vibrazione ogni 1,5 s anche con VIBRAZIONE = NO, un tocco la ferma, al massimo 60 s.
+  **Solo RAM**: si perdono al riavvio e suonano solo con l'orologio impostato: sono il primo
+  motivo per salvare in flash.
 - ✅ **Puntini più lenti** (0.8.3): accesi 1 s, spenti 1 s (prima mezzo secondo ciascuno).
 - ✅ **Freccia indietro curva** (0.8.3): icona a U come "torna", al posto della freccia dritta.
 - ✅ **Fine lettera più rapida** (0.8.2): pausa di fine lettera 1,5 × soglia del punto invece di

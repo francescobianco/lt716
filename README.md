@@ -183,6 +183,8 @@ DUMPER_MAC=band1 ./lt716 fs ls                     # MorseOS 0.8+: i file della 
 DUMPER_MAC=band1 ./lt716 fs cat /log/battery.csv   # una serie in CSV
 DUMPER_MAC=band1 ./lt716 fs write /morse/speed 12  # una configurazione
 DUMPER_MAC=band1 ./lt716 fs mount ~/band           # la band come cartella (FUSE), Ctrl+C smonta
+MAC=band1 ./lt716 alarms                           # MorseOS 0.8.4+: le sveglie da alarms.txt
+echo "07:00 MON TUE WED THU FRI" > ~/band/clock/alarms   # o una alla volta dal mount
 ./lt716 dumper info|dump|assets <src>|updater|reboot   # parla col nostro firmware dumper
 ```
 
@@ -441,7 +443,7 @@ Roadmap e idee: [`firmware/morseos/IDEE.md`](firmware/morseos/IDEE.md).
   `./lt716 settime | notify | find | battery`, `DUMPER_MAC=band1 ./lt716 dumper touchlog`.
 - **Uscita verso l'aggiornatore**:
   - dal PC: `DUMPER_MAC=band1 ./lt716 dumper updater`;
-  - dal tasto: tienilo premuto 10 s (schermo rosso), **rilascia e dai 3 tocchi brevi** (< 400 ms
+  - dal tasto: tienilo premuto 60 s (schermo rosso; 10 s fino alla 0.8.3), **rilascia e dai 3 tocchi brevi** (< 400 ms
     ciascuno, entro 5 s). Qualsiasi altra cosa annulla;
   - da sola: 3 avvii di fila senza 60 s di funzionamento sano (15 s fino alla 0.8.0) (watchdog di 4 s dalla 0.5.7).
   Nell'aggiornatore lo schermo è spento e il tasto non fa nulla: la band sembra morta, ma si
