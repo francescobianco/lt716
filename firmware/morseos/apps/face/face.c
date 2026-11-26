@@ -1,7 +1,7 @@
 /*
  * Watch face (home): big 00:00 with the colon blinking (1 s on, 1 s off), weekday + day, BT and
  * battery on top, the Morse being typed below. Typing the access word opens the menu.
- * The clock is chosen at build time, [options] clock in bundle.ini:
+ * All text in Ubuntu Condensed Bold too (lib/aafont, 0.8.5). The clock is chosen at build time, [options] clock in bundle.ini:
  *   font      antialiased Ubuntu Condensed Bold digits (clock_font.h, run-length coded)
  *   segments  the 7-segment digits of MorseOS 0.3-0.6
  * Holding the key past the reset threshold clears the input: the text line turns red and a
@@ -9,7 +9,7 @@
  */
 #include "mos.h"
 #include "battery.h"
-#include "font.h"
+#include "aafont.h"
 #include "rtc.h"
 #include "st7735.h"
 #include "drivers/5316/clock.h"
@@ -83,7 +83,7 @@ static void draw_link(void) {
     if (mos_connected()) {
         /* who is connected (first 3 letters of its name) and the signal, like a phone */
         int x = 3;
-        if (who[0]) x = font_text(3, 2, who, 1, C_WHITE, C_BLACK) + 2;  /* name, if it told us */
+        if (who[0]) x = aafont_text(&aafont_small, 3, 2, who, C_WHITE, C_BLACK) + 2;  /* name */
         for (i = 0; i < 4; i++) {
             int h = 2 + 2 * i;
             lcd_fill(x + i * 4, 10 - h, 3, h, i < bars ? C_WHITE : C_GREY);
@@ -160,8 +160,7 @@ static void draw_time(void) {
     for (w = rtc_is_set() ? wday_it[t.wday] : "---"; *w;) *p++ = *w++;
     *p++ = ' ';
     mos_num(p, rtc_is_set() ? t.day : 0, 1);
-    lcd_fill(0, 82, lcd.width, 16, C_BLACK);
-    mos_center_text(82, d, 2, C_WHITE);
+    aafont_line(&aafont_medium, 82, d, C_WHITE, C_BLACK);
     last_min = t.min;
 }
 
@@ -216,13 +215,10 @@ static void tick(void) {
 
 static void pattern(const char *pat) { mos_pattern_at(126, pat, C_YELLOW, 1); }
 
-/* letters typed so far: big and white, the last 6 that fit */
+/* letters typed so far: big and white, the end that fits the width */
 static void word(const char *w) {
-    int n = 0;
-    while (w[n]) n++;
-    if (n > 6) w += n - 6;
-    lcd_fill(0, 104, lcd.width, 16, C_BLACK);
-    mos_center_text(104, w, 2, C_WHITE);
+    while (*w && aafont_width(&aafont_medium, w) > lcd.width - 4) w++;  /* the end that fits */
+    aafont_line(&aafont_medium, 104, w, C_WHITE, C_BLACK);
 }
 
 /* long press: input cleared, shown by the wiper on the text line; typing starts again after

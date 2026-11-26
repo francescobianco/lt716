@@ -165,6 +165,11 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   vibrazione ogni 1,5 s anche con VIBRAZIONE = NO, un tocco la ferma, al massimo 60 s.
   **Solo RAM**: si perdono al riavvio e suonano solo con l'orologio impostato: sono il primo
   motivo per salvare in flash.
+- ✅ **Tutto il quadrante in Ubuntu Condensed Bold** (0.8.5): data e lettere digitate a 20 px,
+  nome del dispositivo connesso a 10 px, proporzionali e antialiasati come le cifre (lib
+  `aafont`, glifi in RLE da `tools/mkassets.py`, 4,75 KB).
+- ✅ **Seconda band su MorseOS 0.8.4** (2026-11-26), immagine `BAND=2` (pin fissi, niente
+  rilevamento): MAC per unità `A4:C1:38:12:99:71` verificato.
 - ✅ **Puntini più lenti** (0.8.3): accesi 1 s, spenti 1 s (prima mezzo secondo ciascuno).
 - ✅ **Freccia indietro curva** (0.8.3): icona a U come "torna", al posto della freccia dritta.
 - ✅ **Fine lettera più rapida** (0.8.2): pausa di fine lettera 1,5 × soglia del punto invece di
