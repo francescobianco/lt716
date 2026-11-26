@@ -13,7 +13,7 @@
 
 #include "tl_common.h"
 
-#define BLESCAN_MAX  8
+#define BLESCAN_MAX  6   /* 0.8.8: was 8 (RAM) */
 #define BLESCAN_NAME 8
 
 typedef struct {

@@ -5,7 +5,7 @@
  *   - a fixed table of files, built with the firmware: no create, delete, rename, permissions;
  *     directories exist only as the "/" in the names
  *   - a file is a function that prints its text when it is read (nothing is stored), and
- *     optionally one that parses a value written to it (one line, up to 63 bytes)
+ *     optionally one that parses a value written to it (one line, up to 39 bytes)
  *   - one value per file, plain text, like sysfs; series are CSV files (/log/...)
  *   - RAM only: what is written is lost on reboot (flash comes in a later version)
  *

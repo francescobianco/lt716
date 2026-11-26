@@ -476,6 +476,52 @@ static void on_terminate(u8 e, u8 *p, int n) {
     stream_on = 0;
 }
 
+/* command 31 and 33 replies, out of main(): their packets would otherwise sit in main's stack
+ * frame, at the bottom of every call chain (RAM is short) */
+__attribute__((noinline)) static void send_battery(void) {
+    u8 pkt[20] = {0xFE, 0xFF, 0xFF, 0xFF, 'B'};
+#ifdef MOS_HAVE_BATTERY
+    u32 mv;
+    battery_update();
+    mv = battery_mv();
+    pkt[5] = mv;
+    pkt[6] = mv >> 8;
+    pkt[7] = battery_level();
+    pkt[8] = battery_charging();
+#endif
+#ifdef MOS_HAVE_RTC
+    {
+        rtc_time_t rt;
+        rtc_get(&rt);
+        pkt[9] = rtc_is_set();
+        pkt[10] = rt.hour;
+        pkt[11] = rt.min;
+        pkt[12] = rt.sec;
+        pkt[13] = rt.day;
+    }
+#endif
+    if (bls_att_pushNotifyData(dump_data_handle, pkt, sizeof(pkt)) == BLE_SUCCESS)
+        battery_pending = 0;
+}
+
+__attribute__((noinline)) static void send_safeguard(u32 t_boot) {
+    /* FE FF FF FF 'W' <boot n> <reg now> <wd on> <capt lo> <capt hi> <rearms>
+     * <healthy> <uptime s lo> <uptime s hi> */
+    u8 pkt[20] = {0xFE, 0xFF, 0xFF, 0xFF, 'W'};
+    u32 capt = (reg_tmr_ctrl >> 9) & 0x3fff, up = mos_ms_since(t_boot) / 1000;
+    pkt[5] = sg_boot;
+    pkt[6] = analog_read(SG_REG);
+    pkt[7] = (reg_tmr_ctrl & FLD_TMR_WD_EN) ? 1 : 0;
+    pkt[8] = capt;
+    pkt[9] = capt >> 8;
+    pkt[10] = sg_rearms;
+    pkt[11] = sg_healthy;
+    pkt[12] = up;
+    pkt[13] = up >> 8;
+    if (bls_att_pushNotifyData(dump_data_handle, pkt, sizeof(pkt)) == BLE_SUCCESS)
+        sg_status_pending = 0;
+}
+
 int main() {
     /* exactly what the stock firmware does before cpu_wakeup_init(): OTA image up to 124 KB,
      * second bank at 0x20000. Booted from 0x20000, the SDK therefore targets 0x0 for OTA. */
@@ -732,48 +778,8 @@ int main() {
             }
         }
 #endif
-        if (battery_pending) {
-            u8 pkt[20] = {0xFE, 0xFF, 0xFF, 0xFF, 'B'};
-#ifdef MOS_HAVE_BATTERY
-            u32 mv;
-            battery_update();
-            mv = battery_mv();
-            pkt[5] = mv;
-            pkt[6] = mv >> 8;
-            pkt[7] = battery_level();
-            pkt[8] = battery_charging();
-#endif
-#ifdef MOS_HAVE_RTC
-            {
-                rtc_time_t rt;
-                rtc_get(&rt);
-                pkt[9] = rtc_is_set();
-                pkt[10] = rt.hour;
-                pkt[11] = rt.min;
-                pkt[12] = rt.sec;
-                pkt[13] = rt.day;
-            }
-#endif
-            if (bls_att_pushNotifyData(dump_data_handle, pkt, sizeof(pkt)) == BLE_SUCCESS)
-                battery_pending = 0;
-        }
-        if (sg_status_pending) {
-            /* FE FF FF FF 'W' <boot n> <reg now> <wd on> <capt lo> <capt hi> <rearms>
-             * <healthy> <uptime s lo> <uptime s hi> */
-            u8 pkt[20] = {0xFE, 0xFF, 0xFF, 0xFF, 'W'};
-            u32 capt = (reg_tmr_ctrl >> 9) & 0x3fff, up = mos_ms_since(t_boot) / 1000;
-            pkt[5] = sg_boot;
-            pkt[6] = analog_read(SG_REG);
-            pkt[7] = (reg_tmr_ctrl & FLD_TMR_WD_EN) ? 1 : 0;
-            pkt[8] = capt;
-            pkt[9] = capt >> 8;
-            pkt[10] = sg_rearms;
-            pkt[11] = sg_healthy;
-            pkt[12] = up;
-            pkt[13] = up >> 8;
-            if (bls_att_pushNotifyData(dump_data_handle, pkt, sizeof(pkt)) == BLE_SUCCESS)
-                sg_status_pending = 0;
-        }
+        if (battery_pending) send_battery();
+        if (sg_status_pending) send_safeguard(t_boot);
         files_pump(files_tx);
         if (name_req == 1 && mos_ms_since(t_conn) > 2000) ask_central_name();
         if (mos_ms_since(t_rssi) > 1000) {

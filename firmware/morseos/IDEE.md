@@ -102,6 +102,12 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   decodificati direttamente nella finestra SPI (`lcd_blit_rle`). Provati e scartati: letterali
   impacchettati (3921 B, i bordi sono gruppi di 1–2 pixel), XOR con la riga sopra (aiuta le
   cifre, peggiora le icone), 2 bit (−0,7 KB in più ma bordi meno morbidi).
+- ✅ **RAM, 0.8.8**: circa 350 B di stack in più. Buffer più corti (log batteria 24 campioni =
+  12 h, log del link 16 eventi, scansione BT 6 dispositivi, riga scritta nei file 39 byte, testo
+  delle notifiche 120 caratteri: −272 B di bss) e i pacchetti delle risposte 31/33 fuori da
+  `main()`, il cui frame sta in fondo a ogni catena di chiamate (172 → 92 B). Misurato: `-Os`
+  riduce la catena più profonda solo del 15 % (384 → 324 B), il resto dello stack è della
+  libreria Telink.
 - 📌 **`-Os` sul codice MorseOS** (misurato 2026-11-25): il progetto compila senza `-O`, cioè
   `-O0`. `make APP_OPT="-Os -fno-strict-aliasing"` solo sulle nostre sorgenti: bin da 83,5 a
   70,0 KB (−13,5 KB); i driver SDK restano `-O0` come provati (con `-Os` anche loro: altri
@@ -160,6 +166,12 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   HRS3300 a `0x44` su I2C software SDA/SCL = PA4/PC7 (dalla prima band; sulla seconda è
   un'ipotesi): si tocca solo all'apertura, linee alte a riposo e ID `0x21` prima di scrivere,
   spento 1 s dopo l'uscita. `/health/hr_pins` per provare altri pin, `/health/hr_state`.
+  **Seconda band: "LINEE BASSE"** (2026-11-26): con la pull-up PA4 o PC7 si leggono bassi a
+  riposo. Ipotesi: sensore non alimentato (un chip spento tiene le linee basse con i diodi di
+  protezione); sulla seconda band portare basso uno fra PA4, PA7, PB1, PB2, PC7 accende il LED
+  verde: PA7 è il candidato per l'alimentazione (attivo basso). 0.8.8: `/health/hr_power`
+  (pin da portare basso mentre il sensore è in uso) e `/health/hr_scan` (scrivere `1`: livelli
+  a riposo dei pin ammessi e ricerca degli indirizzi dei sensori soliti su ogni coppia).
 
 - 📌 **Accelerometro**: scansione I2C (sola lettura) su PA3/PC4, interrupt su PA4; identificare il
   chip (SC7A20, STK8321, DA213, QMA7981…), poi X/Y/Z a schermo, **contapassi**, **alza il polso

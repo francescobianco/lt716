@@ -5,7 +5,7 @@
 #include "st7735.h"
 #include "drivers/5316/clock.h"
 
-static char text[13 * 13 + 1];  /* what fits: 13 lines of 13 columns */
+static char text[120 + 1];  /* 0.8.8: 120 characters, 10 lines of 13 (RAM) */
 
 static void draw(void) {
     int y = 16, i = 0, col;

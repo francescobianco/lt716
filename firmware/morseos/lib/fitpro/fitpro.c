@@ -6,9 +6,9 @@
 #include "fitpro.h"
 #include "rtc.h"
 
-/* only the start of a packet is kept: header (8) + notification type (3) + the text that fits
- * the message screen (169); longer packets are still counted to the end and acknowledged */
-#define BUF_MAX (8 + 3 + 169 + 1)
+/* only the start of a packet is kept: header (8) + notification type (3) + the text the message
+ * screen shows (120); longer packets are still counted to the end and acknowledged */
+#define BUF_MAX (8 + 3 + 120 + 1)
 
 static const fitpro_cb_t *cb;
 static u8 buf[BUF_MAX];

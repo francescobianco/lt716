@@ -120,7 +120,7 @@ class BandFS:
         return b"".join(data[o] for o in sorted(data) if o < end[0])
 
     def write_id(self, fid, value):
-        value = value[:63]
+        value = value[:39]          # the band keeps 39 bytes of a written line
         st = []
         self.rx = lambda v: st.append(v[4]) if v[:2] == b"\xff\xff" and v[2] == fid else None
         try:

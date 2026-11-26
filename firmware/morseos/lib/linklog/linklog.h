@@ -15,7 +15,7 @@
 
 #include "tl_common.h"
 
-#define LINKLOG_N 32
+#define LINKLOG_N 16   /* 0.8.8: was 32 (RAM) */
 
 enum { LL_SAMPLE, LL_CONNECT, LL_LOST };
 

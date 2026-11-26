@@ -14,6 +14,7 @@ static const char *const allowed_name[] = {"A3", "A4", "A7", "B4", "B5", "B6", "
 #define N_ALLOWED 10
 
 static u8 sda_i = 1, scl_i = 9;  /* A4, C7 */
+static s8 pwr_i = -1;            /* power pin, active low; -1 none */
 static u32 sda, scl;
 static int state = HRS_OFF;
 static u8 id;
@@ -103,9 +104,26 @@ static int wr(u8 reg, u8 v) {
     return ok;
 }
 
+static void power(int on) {
+    u32 p;
+    if (pwr_i < 0) return;
+    p = allowed[pwr_i];
+    if (on) {
+        gpio_set_func(p, AS_GPIO);
+        gpio_write(p, 0);
+        gpio_set_input_en(p, 0);
+        gpio_set_output_en(p, 1);
+        sleep_us(20 * 1000);                       /* let the sensor's supply settle */
+    } else {
+        gpio_set_output_en(p, 0);                  /* released: floating, as at boot */
+        gpio_set_input_en(p, 1);
+    }
+}
+
 static void pins_off(void) {
     restore(sda);
     restore(scl);
+    power(0);
 }
 
 int hrs_start(void) {
@@ -120,6 +138,7 @@ int hrs_start(void) {
     if (state == HRS_ON) return state;
     sda = allowed[sda_i];
     scl = allowed[scl_i];
+    power(1);
     setup(sda);
     setup(scl);
     sleep_us(200);
@@ -162,6 +181,118 @@ int hrs_read(u32 *c0, u32 *c1) {
     return 1;
 }
 
+void hrs_power_text(char *out) {
+    if (pwr_i < 0) {
+        out[0] = '-';
+        out[1] = 0;
+        return;
+    }
+    out[0] = allowed_name[pwr_i][0];
+    out[1] = allowed_name[pwr_i][1];
+    out[2] = 0;
+}
+
+static int pin_index(const char *s);
+
+int hrs_set_power(const char *s) {
+    int p;
+    if (state != HRS_OFF) return -1;
+    if (s[0] == '-' && !s[1]) {
+        pwr_i = -1;
+        return 0;
+    }
+    if (!s[0] || !s[1] || s[2] || (p = pin_index(s)) < 0 || p == sda_i || p == scl_i) return -1;
+    pwr_i = p;
+    return 0;
+}
+
+/* ---- scan: levels at rest, then the usual sensor addresses on every pair of high pins ---- */
+static const u8 scan_addr[] = {0x44, 0x33, 0x18, 0x19, 0x0F, 0x12, 0x13, 0x1E, 0x1F, 0x26, 0x27,
+                               0x15, 0x68};
+#define SCAN_HITS 6
+static u16 levels;               /* bit i = allowed[i] high at rest; bit 15 = scan done */
+static u8 hits[SCAN_HITS][3];    /* sda index, scl index, address */
+static u8 n_hits;
+
+static int probe(u8 addr) {
+    int ack;
+    start();
+    ack = put(addr << 1);
+    stop();
+    return ack;
+}
+
+void hrs_scan(void) {
+    int i, j, k;
+    if (state != HRS_OFF) return;
+    power(1);
+    levels = 0;
+    n_hits = 0;
+    for (i = 0; i < N_ALLOWED; i++) {
+        if (i == pwr_i) continue;
+        setup(allowed[i]);
+    }
+    sleep_us(500);
+    for (i = 0; i < N_ALLOWED; i++)
+        if (i != pwr_i && gpio_read(allowed[i])) levels |= 1 << i;
+    for (i = 0; i < N_ALLOWED; i++)
+        for (j = 0; j < N_ALLOWED; j++) {
+            if (i == j || !(levels >> i & 1) || !(levels >> j & 1)) continue;
+            sda = allowed[i];
+            scl = allowed[j];
+            for (k = 0; k < (int)sizeof(scan_addr) && n_hits < SCAN_HITS; k++)
+                if (probe(scan_addr[k])) {
+                    hits[n_hits][0] = i;
+                    hits[n_hits][1] = j;
+                    hits[n_hits][2] = scan_addr[k];
+                    n_hits++;
+                }
+            stop();
+        }
+    for (i = 0; i < N_ALLOWED; i++)
+        if (i != pwr_i) restore(allowed[i]);
+    power(0);
+    levels |= 0x8000;
+}
+
+void hrs_scan_text(void (*put_s)(const char *s)) {
+    int i;
+    char t[12];
+    if (!(levels & 0x8000)) {
+        put_s("not run: write 1\n");
+        return;
+    }
+    put_s("power ");
+    hrs_power_text(t);
+    put_s(t);
+    put_s("\nidle");
+    for (i = 0; i < N_ALLOWED; i++) {
+        if (i == pwr_i) continue;
+        t[0] = ' ';
+        t[1] = allowed_name[i][0];
+        t[2] = allowed_name[i][1];
+        t[3] = '=';
+        t[4] = levels >> i & 1 ? 'H' : 'L';
+        t[5] = 0;
+        put_s(t);
+    }
+    put_s("\n");
+    for (i = 0; i < n_hits; i++) {         /* "A4 C7 44": SDA SCL address */
+        t[0] = allowed_name[hits[i][0]][0];
+        t[1] = allowed_name[hits[i][0]][1];
+        t[2] = ' ';
+        t[3] = allowed_name[hits[i][1]][0];
+        t[4] = allowed_name[hits[i][1]][1];
+        t[5] = ' ';
+        t[6] = "0123456789abcdef"[hits[i][2] >> 4];
+        t[7] = "0123456789abcdef"[hits[i][2] & 15];
+        t[8] = '\n';
+        t[9] = 0;
+        put_s(t);
+    }
+    if (!n_hits) put_s("no device\n");
+}
+
 void hrs_pins_text(char *out) {
     const char *a = allowed_name[sda_i], *b = allowed_name[scl_i];
     out[0] = a[0]; out[1] = a[1]; out[2] = ' '; out[3] = b[0]; out[4] = b[1]; out[5] = 0;
@@ -181,7 +312,8 @@ int hrs_set_pins(const char *s) {  /* "A4 C7": SDA SCL */
     if (!s[0] || !s[1] || (a = pin_index(s)) < 0) return -1;
     s += 2;
     while (*s == ' ') s++;
-    if (!s[0] || !s[1] || (b = pin_index(s)) < 0 || s[2] || a == b) return -1;
+    if (!s[0] || !s[1] || (b = pin_index(s)) < 0 || s[2] || a == b || a == pwr_i || b == pwr_i)
+        return -1;
     if (state != HRS_OFF) return -1;               /* not while it is in use */
     sda_i = a;
     scl_i = b;

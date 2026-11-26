@@ -25,8 +25,8 @@
 #endif
 
 #define WIN       16    /* data bytes per notification */
-#define WBUF      64
-#define LOG_N     48    /* battery samples kept: 24 h at the default 30 min */
+#define WBUF      40    /* one line written: the longest is an alarm (33) */
+#define LOG_N     24    /* battery samples kept: 12 h at the default 30 min (0.8.8: was 48) */
 
 /* from main.c */
 extern u8 sg_boot, sg_healthy, sg_rearms;
@@ -402,6 +402,19 @@ static void r_hrpins(void) {
     nl();
 }
 static int w_hrpins(const char *s) { return hrs_set_pins(s) ? 3 : 0; }
+static void r_hrpower(void) {
+    char t[4];
+    hrs_power_text(t);
+    puts_(t);
+    nl();
+}
+static int w_hrpower(const char *s) { return hrs_set_power(s) ? 3 : 0; }
+static void r_hrscan(void) { hrs_scan_text(puts_); }
+static int w_hrscan(const char *s) {
+    if (!(s[0] == '1' && !s[1])) return 3;
+    hrs_scan();
+    return 0;
+}
 static void r_hrstate(void) {   /* off, on, lines-low, no-answer, id-XX */
     static const char *const n[] = {"off", "on", "lines-low", "no-answer", "id-"};
     int s = hrs_state();
@@ -444,6 +457,8 @@ static const file_t files[] = {
 #ifdef MOS_HAVE_HRS3300
     {"/health/hr_pins", r_hrpins, w_hrpins},
     {"/health/hr_state", r_hrstate, 0},
+    {"/health/hr_power", r_hrpower, w_hrpower},
+    {"/health/hr_scan", r_hrscan, w_hrscan},
 #endif
     {"/morse/speed", r_speed, w_speed},
     {"/morse/dot_ms", r_threshold, 0},
