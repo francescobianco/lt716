@@ -3,6 +3,11 @@
  * I2C: SDA = PA4, SCL = PC7 on the first band (from the stock firmware's disassembly); on the
  * second band the same pins are only a guess, so they can be changed (/health/hr_pins).
  *
+ * The stock firmware (V10712, and the server images V08928 G and V17899 D, disassembled
+ * 2026-11-26) shares SDA = PA4 with its hardware I2C (SCL = PA3, most likely the
+ * accelerometer). A slave stopped mid-byte holds SDA low: since 0.8.9 the bus is unstuck with
+ * up to 9 clock pulses on PC7, then PA3, before giving up with "lines low".
+ *
  * Safety (rules after the 0.5.5 incident): nothing is touched until hrs_start(), called when
  * HEALTH > BATTITO opens; both lines must read high at rest, the ID must be 0x21, and only
  * then the registers are written (the stock firmware's values). Lines are only pulled low or

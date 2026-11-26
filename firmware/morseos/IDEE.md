@@ -172,6 +172,12 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   verde: PA7 è il candidato per l'alimentazione (attivo basso). 0.8.8: `/health/hr_power`
   (pin da portare basso mentre il sensore è in uso) e `/health/hr_scan` (scrivere `1`: livelli
   a riposo dei pin ammessi e ricerca degli indirizzi dei sensori soliti su ogni coppia).
+  Prove 0.8.8: a riposo **A4 e B5 bassi**, tutti gli altri alti; nessun dispositivo; nessun pin
+  attivo basso cambia qualcosa. **Immagini del server disassemblate** (V08928 G, V17899 D, come
+  la V10712 della prima band): stessa tabella dell'HRS3300, I2C software SDA = PA4, SCL = PC7,
+  **nessun pin di alimentazione**; PA4 è **condiviso** con l'I2C hardware (`AS_I2C_MSD` su PA4,
+  `AS_I2C_MCK` su PA3), quasi certamente l'accelerometro. 0.8.9: sblocco del bus (fino a 9
+  impulsi di clock su PC7, poi PA3) se SDA è basso, esito in `/health/hr_scan`.
 
 - 📌 **Accelerometro**: scansione I2C (sola lettura) su PA3/PC4, interrupt su PA4; identificare il
   chip (SC7A20, STK8321, DA213, QMA7981…), poi X/Y/Z a schermo, **contapassi**, **alza il polso

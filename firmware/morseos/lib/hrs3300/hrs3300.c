@@ -120,6 +120,51 @@ static void power(int on) {
     }
 }
 
+/* A slave stopped in the middle of a byte (e.g. by a reset) keeps SDA low and ignores
+ * everything: clock it out with up to 9 pulses on its SCL, then a stop. The stock firmware
+ * shares SDA = PA4 between the HRS3300 (SCL = PC7, bit-banged) and, on the hardware I2C,
+ * most likely the accelerometer (SCL = PA3): either can hold it. 1 = SDA is high now. */
+static int unstick(u32 d, u32 c) {
+    int i;
+    setup(c);
+    sleep_us(50);
+    if (!gpio_read(c)) {                           /* this clock line is held too: not ours */
+        restore(c);
+        return gpio_read(d) ? 1 : 0;
+    }
+    release(d);
+    for (i = 0; i < 9 && !gpio_read(d); i++) {
+        low(c); sleep_us(HALF_US);
+        release(c); sleep_us(HALF_US);
+    }
+    low(d); sleep_us(HALF_US);                     /* stop: SDA rises while SCL is high */
+    release(c); sleep_us(HALF_US);
+    release(d); sleep_us(HALF_US);
+    return gpio_read(d) ? 1 : 0;
+}
+
+#define I_A3 0
+#define I_C7 9
+static s8 unstuck_by = -2;       /* last recovery: -2 none needed, -1 failed, else pin index */
+
+/* SDA (index si) low at rest: try PC7, then PA3, as its clock (unless used otherwise) */
+static int recover_sda(int si) {
+    static const u8 clocks[2] = {I_C7, I_A3};
+    int k;
+    for (k = 0; k < 2; k++) {
+        int c = clocks[k];
+        if (c == si || c == pwr_i) continue;
+        if (unstick(allowed[si], allowed[c])) {
+            if (c != scl_i) restore(allowed[c]);
+            unstuck_by = c;
+            return 1;
+        }
+        if (c != scl_i) restore(allowed[c]);
+    }
+    unstuck_by = -1;
+    return 0;
+}
+
 static void pins_off(void) {
     restore(sda);
     restore(scl);
@@ -142,6 +187,8 @@ int hrs_start(void) {
     setup(sda);
     setup(scl);
     sleep_us(200);
+    unstuck_by = -2;
+    if (gpio_read(scl) && !gpio_read(sda)) recover_sda(sda_i);   /* 0.8.9: a stuck bus */
     if (!gpio_read(sda) || !gpio_read(scl)) {      /* something holds a line low: hands off */
         pins_off();
         return state = HRS_ERR_LINES;
@@ -233,6 +280,11 @@ void hrs_scan(void) {
         setup(allowed[i]);
     }
     sleep_us(500);
+    unstuck_by = -2;
+    if (!gpio_read(allowed[sda_i])) recover_sda(sda_i);   /* the sensor's SDA held low */
+    for (i = 0; i < N_ALLOWED; i++)
+        if (i != pwr_i) setup(allowed[i]);
+    sleep_us(200);
     for (i = 0; i < N_ALLOWED; i++)
         if (i != pwr_i && gpio_read(allowed[i])) levels |= 1 << i;
     for (i = 0; i < N_ALLOWED; i++)
@@ -274,6 +326,16 @@ void hrs_scan_text(void (*put_s)(const char *s)) {
         t[3] = '=';
         t[4] = levels >> i & 1 ? 'H' : 'L';
         t[5] = 0;
+        put_s(t);
+    }
+    put_s("\nunstick ");
+    if (unstuck_by == -2) put_s("not needed");
+    else if (unstuck_by == -1) put_s("failed");
+    else {
+        t[0] = allowed_name[unstuck_by][0];
+        t[1] = allowed_name[unstuck_by][1];
+        t[2] = 0;
+        put_s("ok with ");
         put_s(t);
     }
     put_s("\n");
