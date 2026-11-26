@@ -151,10 +151,16 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   (scansione in advertising e in connessione), disconnetti, "connetti a…" come periferica:
   white list + advertising diretto verso il dispositivo scelto (la libreria non ha il ruolo
   master). Libreria `ble_scan`.
-- 📌 **SALUTE > BATTITO**: HRS3300 (init del firmware originale: `16←78`, `17←0D`, `0C←4E`/`6E`,
-  `02..07,0B←00`; acceso `01←D0`, spento `01←00`). Onda PPG grezza che scorre (canale C0 =
-  luce del LED riflessa), C1 = luce ambiente, segno che pulsa a ogni battito, BPM dai picchi,
-  campioni anche via BLE.
+- 🔨 **SALUTE > BATTITO** (0.8.7, da provare sulla band): menu SALUTE con icona del cuore. Lettore
+  semplice che mostra i passaggi: LED (C0), AMB (C1), DC (media ~1,6 s), AC (DC − C0), PEN
+  (pendenza su 100 ms), SOG (metà dei picchi recenti di PEN), IBI, BPM (media di 4 IBI fra 300 e
+  1500 ms), onda AC che scorre con i battiti in rosso. I battiti si cercano sulla **pendenza**:
+  la salita del battito è molto più rapida della deriva della luce quando la band si muove, che
+  sbilancia l'AC (provato su segnale sintetico con deriva e rumore: entro 1–2 BPM da 50 a 140).
+  HRS3300 a `0x44` su I2C software SDA/SCL = PA4/PC7 (dalla prima band; sulla seconda è
+  un'ipotesi): si tocca solo all'apertura, linee alte a riposo e ID `0x21` prima di scrivere,
+  spento 1 s dopo l'uscita. `/health/hr_pins` per provare altri pin, `/health/hr_state`.
+
 - 📌 **Accelerometro**: scansione I2C (sola lettura) su PA3/PC4, interrupt su PA4; identificare il
   chip (SC7A20, STK8321, DA213, QMA7981…), poi X/Y/Z a schermo, **contapassi**, **alza il polso
   per accendere**, sonno.

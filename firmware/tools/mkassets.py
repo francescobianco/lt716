@@ -198,11 +198,22 @@ def icon_bell():
     return im.resize((BELL, BELL), Image.LANCZOS)
 
 
+def icon_health():
+    """a heart"""
+    im, d = canvas()
+    d.ellipse((8, 18, 68, 78), fill=255)
+    d.ellipse((60, 18, 120, 78), fill=255)
+    d.polygon([(11, 60), (117, 60), (64, 118)], fill=255)
+    d.rectangle((38, 40, 90, 64), fill=255)
+    return im
+
+
 ICONS = [
     ("INFO", "info", icon_info),
     ("STRUMENTI", "tools", icon_tools),
     ("GIOCHI", "games", icon_games),
     ("IMPOSTAZIONI", "settings", icon_settings),
+    ("SALUTE", "health", icon_health),
     ("", "back", icon_back),
 ]
 

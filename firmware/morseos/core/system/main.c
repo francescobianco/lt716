@@ -52,6 +52,9 @@
 #ifdef MOS_HAVE_LINKLOG
 #include "linklog.h"
 #endif
+#ifdef MOS_HAVE_HRS3300
+#include "hrs3300.h"
+#endif
 #ifdef MOS_HAVE_ALARM
 #include "alarms.h"
 #include "alarm.h"
@@ -613,6 +616,9 @@ int main() {
 #endif
         mos_poll(emergency_stage == 0 ? t : 0);
         files_poll();
+#ifdef MOS_HAVE_HRS3300
+        hrs_poll();                    /* sensor off 1 s after BATTITO stops asking */
+#endif
 #ifdef MOS_HAVE_ALARM
         if (!emergency_stage && alarms_due()) alarm_ring();
 #endif

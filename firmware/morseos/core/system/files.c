@@ -20,6 +20,9 @@
 #ifdef MOS_HAVE_LINKLOG
 #include "linklog.h"
 #endif
+#ifdef MOS_HAVE_HRS3300
+#include "hrs3300.h"
+#endif
 
 #define WIN       16    /* data bytes per notification */
 #define WBUF      64
@@ -389,6 +392,28 @@ static int w_linkint(const char *s) {
 }
 #endif
 
+#ifdef MOS_HAVE_HRS3300
+/* /health/hr_pins: "SDA SCL" of the sensor's software I2C, e.g. "A4 C7" (only pins that are
+ * not the display, motor, key, battery or SPI ones; not while BATTITO is open) */
+static void r_hrpins(void) {
+    char t[6];
+    hrs_pins_text(t);
+    puts_(t);
+    nl();
+}
+static int w_hrpins(const char *s) { return hrs_set_pins(s) ? 3 : 0; }
+static void r_hrstate(void) {   /* off, on, lines-low, no-answer, id-XX */
+    static const char *const n[] = {"off", "on", "lines-low", "no-answer", "id-"};
+    int s = hrs_state();
+    puts_(n[s]);
+    if (s == HRS_ERR_ID) {
+        putc_("0123456789abcdef"[hrs_id() >> 4]);
+        putc_("0123456789abcdef"[hrs_id() & 15]);
+    }
+    nl();
+}
+#endif
+
 typedef struct {
     const char *path;
     void (*read)(void);
@@ -415,6 +440,10 @@ static const file_t files[] = {
     {"/power/status", r_status, 0},
     {"/log/battery.csv", r_log, w_log},
     {"/log/battery.interval", r_interval, w_interval},
+#endif
+#ifdef MOS_HAVE_HRS3300
+    {"/health/hr_pins", r_hrpins, w_hrpins},
+    {"/health/hr_state", r_hrstate, 0},
 #endif
     {"/morse/speed", r_speed, w_speed},
     {"/morse/dot_ms", r_threshold, 0},
