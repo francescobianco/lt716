@@ -226,9 +226,14 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   più grande, come la band **M6** di rbaron (display RS su PC6, retroilluminazione PA2), il cui
   sensore del battito è "most likely fake". Ipotesi: sulla seconda band il "battito" è solo il
   LED su PC7. davidgiven/telinkdebugger (SWS con un Pico) è provato sulle LT716.
-- 📌 **Accelerometro** (2026-11-26): non ancora trovato. Nel firmware originale le funzioni I2C
-  in bit-bang parlano solo con l'HRS3300 (`0x88`); l'I2C hardware è assegnato a PA4/PA3 ma non
-  ho trovato chi lo usa. Il contapassi è un algoritmo sul microcontrollore sopra i dati grezzi.
+- 🔨 **Il contapassi è un interruttore di vibrazione su PA4, non un accelerometro** (trovato il
+  2026-11-26 risalendo nel firmware originale V10712 dalla risposta FitPro `15 0D`): passi =
+  struttura a `0x80b014`+0x205, scritti da `0x3d8`; il compito periodico `0x2b4` somma i passi
+  nuovi di `0x15a04` (libreria dei passi, `0x15640`–`0x15b60`); `0x675c` la inizializza:
+  interrupt su PA4 (`0x66e8`, pull-up) con gestore `0x64e0` che inverte la polarità a ogni fronte
+  e avvisa la libreria (`0x158f4`), parametri `4, 4, 30, 3`. Sulla seconda band PA4 "tenuto
+  basso" = interruttore chiuso a massa a riposo. 0.8.13: `/health/motion` (livello e fronti di
+  PA4, letto dal ciclo principale) per vederlo reagire; poi il contapassi sopra.
 - ✅ **Tutto il quadrante in Ubuntu Condensed Bold** (0.8.5): data e lettere digitate a 20 px,
   nome del dispositivo connesso a 10 px, proporzionali e antialiasati come le cifre (lib
   `aafont`, glifi in RLE da `tools/mkassets.py`, 4,75 KB).

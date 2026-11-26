@@ -26,6 +26,9 @@
 #ifdef MOS_HAVE_HWSCAN
 #include "hwscan.h"
 #endif
+#ifdef MOS_HAVE_MOTION
+#include "motion.h"
+#endif
 
 #define WIN       16    /* data bytes per notification */
 #define WBUF      40    /* one line written: the longest is an alarm (33) */
@@ -463,6 +466,17 @@ static int w_hwscan(const char *s) {
 }
 #endif
 
+#ifdef MOS_HAVE_MOTION
+/* /health/motion: "<level of PA4> <edges counted>"; write anything to zero the count */
+static void r_motion(void) {
+    putn(motion_level(), 1);
+    putc_(' ');
+    putn(motion_edges(), 1);
+    nl();
+}
+static int w_motion(const char *s) { motion_clear(); return 0; }
+#endif
+
 typedef struct {
     const char *path;
     void (*read)(void);
@@ -500,6 +514,9 @@ static const file_t files[] = {
 #endif
 #ifdef MOS_HAVE_HWSCAN
     {"/hw/scan", r_hwscan, w_hwscan},
+#endif
+#ifdef MOS_HAVE_MOTION
+    {"/health/motion", r_motion, w_motion},
 #endif
     {"/morse/speed", r_speed, w_speed},
     {"/morse/dot_ms", r_threshold, 0},

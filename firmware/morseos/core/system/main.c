@@ -61,6 +61,9 @@
 #ifdef MOS_HAVE_HWSCAN
 #include "hwscan.h"
 #endif
+#ifdef MOS_HAVE_MOTION
+#include "motion.h"
+#endif
 #ifdef MOS_HAVE_ALARM
 #include "alarms.h"
 #include "alarm.h"
@@ -615,6 +618,9 @@ int main() {
 #ifdef MOS_HAVE_BATTERY
     battery_update();
 #endif
+#ifdef MOS_HAVE_MOTION
+    motion_init();
+#endif
     mos_init(buzz, notify);
 
     irq_enable();
@@ -668,6 +674,9 @@ int main() {
 #endif
         mos_poll(emergency_stage == 0 ? t : 0);
         files_poll();
+#ifdef MOS_HAVE_MOTION
+        motion_poll();                 /* vibration switch on PA4: count its edges */
+#endif
 #ifdef MOS_HAVE_HWSCAN
         hwscan_poll();                 /* diag bundle: one pin pair per pass */
 #endif

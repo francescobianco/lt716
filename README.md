@@ -95,6 +95,7 @@ prima band, 0x8d74 byte).
 | Geometria | 80×160, colonna 24, riga 0, MADCTL `0x00` (tasto in basso, ordine RGB), senza INVON | colonna 26, riga 1, MADCTL `0xC8`, INVON |
 | Retroilluminazione | **PA2**, alto = acceso (flottante = debole) | PB3 |
 | LED verde del sensore | **PC7**, attivo basso (MorseOS 0.8.11, `/health/pin`, 2026-11-26) | PC7 è il clock I2C dell'HRS3300 |
+| Sensore dei passi | **PA4**: interruttore di vibrazione, chiuso a massa a riposo (dal firmware originale, 2026-11-26) | PA4 con interrupt sui due fronti |
 | Alimentazione del touch (?) | uno di PB4–PB7, PC0, PC4, PC7: portati tutti bassi, PC2 è rimasto alto 10 s e disptest è uscito da solo all'aggiornatore | |
 
 Senza PA0 alto il pannello non risponde: l'ID letto è `00 00 00`. Con DC sul pin sbagliato
