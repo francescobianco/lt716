@@ -612,6 +612,9 @@ int main() {
         fp_cb.alarms_set = alarms_from_fitpro;
         fp_cb.alarms_get = alarms_to_fitpro;
 #endif
+#ifdef MOS_HAVE_MOTION
+        fp_cb.steps = steps_today;
+#endif
         fitpro_init(&fp_cb);
     }
 #endif
@@ -763,6 +766,16 @@ int main() {
                 cur_padwake = !stuck;
                 cpu_set_gpio_wakeup(PIN_TOUCH, 1, cur_padwake);
             }
+#ifdef MOS_HAVE_MOTION
+            {   /* step sensor: wake on the next change of PA4 (the level opposite to now) */
+                static int cur_motion_wake = -1;
+                int w = motion_wake_level();
+                if (w != cur_motion_wake) {
+                    cur_motion_wake = w;
+                    cpu_set_gpio_wakeup(GPIO_PA4, w, 1);
+                }
+            }
+#endif
         }
 
         if (!connected) continue;

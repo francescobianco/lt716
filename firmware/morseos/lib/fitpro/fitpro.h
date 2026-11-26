@@ -11,6 +11,7 @@ typedef struct {
     void (*message)(const char *text);  /* 12 12 / 12 11: notification or call, UTF-8 */
     void (*alarms_set)(const u8 *d, int len);  /* 12 02: the whole list, 5 bytes per alarm */
     int  (*alarms_get)(u8 *out);               /* 18: the list in the same format, its length */
+    u32  (*steps)(void);                       /* 15 0D: today's steps */
 } fitpro_cb_t;
 
 void fitpro_init(const fitpro_cb_t *cb);

@@ -15,6 +15,22 @@
 #include "alarms.h"
 #include "icons.h"
 #endif
+#ifdef MOS_HAVE_MOTION
+#include "motion.h"
+#include "st7735.h"
+#include "aafont.h"
+static u32 last_steps = 0xFFFFFFFF;
+
+/* today's steps, small, at the bottom (above the touch mark) */
+static void draw_steps(void) {
+    char t[16], *p;
+    last_steps = steps_today();
+    p = mos_num(t, last_steps, 1);
+    *p++ = ' '; *p++ = 'P'; *p++ = 'A'; *p++ = 'S'; *p++ = 'S'; *p++ = 'I';
+    *p = 0;
+    aafont_line(&aafont_small, 140, t, C_GREY, C_BLACK);
+}
+#endif
 #include "st7735.h"
 #include "drivers/5316/clock.h"
 
@@ -212,7 +228,13 @@ static void draw(void) {
     word("");                                  /* 104..119 */
     lcd_fill(0, 120, lcd.width, 6, C_BLACK);
     mos_pattern_at(126, "", C_YELLOW, 1);      /* 126..133 */
+#ifdef MOS_HAVE_MOTION
+    lcd_fill(0, 134, lcd.width, 6, C_BLACK);
+    draw_steps();                              /* 140..148 */
+    lcd_fill(0, 149, lcd.width, lcd.height - 149, C_BLACK);
+#else
     lcd_fill(0, 134, lcd.width, lcd.height - 134, C_BLACK);
+#endif
 }
 
 static void tick(void) {
@@ -238,6 +260,9 @@ static void tick(void) {
         draw_battery();
     else if (last_charging == 1 && mos_screen_on()) pump_battery();
     if (link_changed()) draw_link();
+#ifdef MOS_HAVE_MOTION
+    if (steps_today() != last_steps) draw_steps();
+#endif
 #ifdef MOS_HAVE_ALARMS
     if ((alarms_count() > 0) != last_alarms) draw_bell();
 #endif

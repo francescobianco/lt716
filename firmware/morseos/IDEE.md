@@ -237,6 +237,12 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   **Confermato sulla seconda band** (0.8.13): a riposo livello 0 e 0 fronti; ~10 s di scosse =
   976 fronti (il contatto rimbalza, ~100 fronti/s). Il contapassi dovrà raggruppare i rimbalzi in
   colpi e contare solo quelli a cadenza di camminata, con l'interrupt anche a CPU addormentata.
+  **0.8.14, contapassi**: PA4 sveglia la CPU (livello di risveglio sempre opposto a quello
+  attuale: una sveglia per cambio, mai sveglia fissa); colpo = fronte dopo ≥150 ms di quiete;
+  passo = colpo a 250–2000 ms dal precedente, contati dopo 4 di fila (le scosse isolate no);
+  totale del giorno sul quadrante, `/health/steps`, `/health/step_cfg`, FitPro `15 0D` (risposta
+  `15 0C` come l'originale; distanza 70 cm e 0,04 kcal a passo, stime). Simulato: 50 passi → 50,
+  30 lenti → 30, colpi isolati e scuotimento → 0. Da tarare con una camminata vera.
 - ✅ **Tutto il quadrante in Ubuntu Condensed Bold** (0.8.5): data e lettere digitate a 20 px,
   nome del dispositivo connesso a 10 px, proporzionali e antialiasati come le cifre (lib
   `aafont`, glifi in RLE da `tools/mkassets.py`, 4,75 KB).

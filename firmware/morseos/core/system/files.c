@@ -467,13 +467,30 @@ static int w_hwscan(const char *s) {
 #endif
 
 #ifdef MOS_HAVE_MOTION
-/* /health/motion: "<level of PA4> <edges counted>"; write anything to zero the count */
+/* /health/motion: "<level of PA4> <edges> <hits>"; write anything to zero the counts */
 static void r_motion(void) {
     putn(motion_level(), 1);
     putc_(' ');
     putn(motion_edges(), 1);
+    putc_(' ');
+    putn(motion_hits(), 1);
     nl();
 }
+/* /health/steps: today's steps; write 0 to zero them */
+static void r_steps(void) { putn(steps_today(), 1); nl(); }
+static int w_steps(const char *s) {
+    if (!(s[0] == '0' && !s[1])) return 3;
+    steps_reset();
+    return 0;
+}
+/* /health/step_cfg: "quiet min max confirm" (ms ms ms hits) of the step counter */
+static void r_stepcfg(void) {
+    char t[24];
+    steps_cfg_text(t);
+    puts_(t);
+    nl();
+}
+static int w_stepcfg(const char *s) { return steps_set_cfg(s) ? 3 : 0; }
 static int w_motion(const char *s) { motion_clear(); return 0; }
 #endif
 
@@ -517,6 +534,8 @@ static const file_t files[] = {
 #endif
 #ifdef MOS_HAVE_MOTION
     {"/health/motion", r_motion, w_motion},
+    {"/health/steps", r_steps, w_steps},
+    {"/health/step_cfg", r_stepcfg, w_stepcfg},
 #endif
     {"/morse/speed", r_speed, w_speed},
     {"/morse/dot_ms", r_threshold, 0},
