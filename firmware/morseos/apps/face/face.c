@@ -11,10 +11,34 @@
 #include "battery.h"
 #include "aafont.h"
 #include "rtc.h"
+#ifdef MOS_HAVE_ALARMS
+#include "alarms.h"
+#include "icons.h"
+#endif
 #include "st7735.h"
 #include "drivers/5316/clock.h"
 
 static const char *const wday_it[7] = {"DOM", "LUN", "MAR", "MER", "GIO", "VEN", "SAB"};
+static int last_alarms = -1;  /* alarms set when the bell was drawn */
+
+/* top bar, between the link and the battery: a small bell while alarms are set */
+static void draw_bell(void) {
+#ifdef MOS_HAVE_ALARMS
+    last_alarms = alarms_count() > 0;
+    if (last_alarms) {               /* the 1 px frame around the 10 x 10 bell, then the bell */
+        lcd_fill(42, 0, 12, 1, C_BLACK);
+        lcd_fill(42, 11, 12, 1, C_BLACK);
+        lcd_fill(42, 1, 1, 10, C_BLACK);
+        lcd_fill(53, 1, 1, 10, C_BLACK);
+        icon_bell(43, 1, C_YELLOW, C_BLACK);
+    } else {
+        lcd_fill(42, 0, 12, 12, C_BLACK);
+    }
+#else
+    lcd_fill(42, 0, 12, 12, C_BLACK);
+#endif
+}
+
 static int last_min = -1, last_level = -1, last_charging = -1, last_conn = -1, last_bars = -1;
 static char last_peer[4];
 static int last_sec = -1, colon_on = 1;
@@ -79,7 +103,7 @@ static u16 time_color(void) { return rtc_is_set() ? C_WHITE : C_GREY; }
 static void draw_link(void) {
     const char *who = mos_peer();
     int bars = mos_signal_bars(), i;
-    lcd_fill(0, 0, 54, 12, C_BLACK);
+    lcd_fill(0, 0, 42, 12, C_BLACK);   /* 42..53: the alarm bell */
     if (mos_connected()) {
         /* who is connected (first 3 letters of its name) and the signal, like a phone */
         int x = 3;
@@ -170,6 +194,7 @@ static void word(const char *w);
 static void draw(void) {
     draw_link();
     draw_battery();
+    draw_bell();
     lcd_fill(0, 12, lcd.width, TIME_Y - 12, C_BLACK);
 #ifdef MOS_OPT_CLOCK_SEGMENTS                  /* the gaps around the digits */
     lcd_fill(0, TIME_Y, 5, TIME_H, C_BLACK);
@@ -211,6 +236,9 @@ static void tick(void) {
         draw_battery();
     else if (last_charging == 1 && mos_screen_on()) pump_battery();
     if (link_changed()) draw_link();
+#ifdef MOS_HAVE_ALARMS
+    if ((alarms_count() > 0) != last_alarms) draw_bell();
+#endif
 }
 
 static void pattern(const char *pat) { mos_pattern_at(126, pat, C_YELLOW, 1); }

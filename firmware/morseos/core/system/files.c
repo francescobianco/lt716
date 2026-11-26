@@ -17,6 +17,9 @@
 #ifdef MOS_HAVE_ALARMS
 #include "alarms.h"
 #endif
+#ifdef MOS_HAVE_LINKLOG
+#include "linklog.h"
+#endif
 
 #define WIN       16    /* data bytes per notification */
 #define WBUF      64
@@ -317,6 +320,75 @@ static void r_alarms(void) {
 static int w_alarms(const char *s) { return alarms_line(s) ? 3 : 0; }
 #endif
 
+#ifdef MOS_HAVE_LINKLOG
+static void putm(u32 cm) {  /* metres with 2 decimals */
+    putn(cm / 100, 1);
+    putc_('.');
+    putn(cm % 100, 2);
+}
+
+/* /bt/link.csv: connections, losses (reason in hex: 08 = out of range, 13 = closed by the PC)
+ * and an RSSI sample every /bt/link.interval s with the distance it suggests; write = clear */
+static void r_link(void) {
+    int i;
+    puts_("uptime_s,event,rssi,dist_m\n");
+    for (i = 0; i < linklog_count(); i++) {
+        const linklog_ev_t *e = linklog_get(i);
+        putn((u32)e->t2 * 2, 1);
+        if (e->kind == LL_SAMPLE) {
+            puts_(",sample,");
+            putsn(e->v);
+            putc_(',');
+            putm(linklog_distance_cm(e->v));
+        } else if (e->kind == LL_CONNECT) {
+            puts_(",connect,,");
+        } else {
+            puts_(",lost-");
+            putc_("0123456789abcdef"[(u8)e->v >> 4]);
+            putc_("0123456789abcdef"[e->v & 15]);
+            puts_(",,");
+        }
+        nl();
+    }
+}
+static int w_link(const char *s) { linklog_clear(); return 0; }
+
+static void r_distance(void) {   /* estimate now, from the averaged RSSI */
+    if (linklog_rssi() > -127) putm(linklog_distance_cm(linklog_rssi()));
+    nl();
+}
+static void r_range(void) {      /* last out-of-range loss: "dBm metres", empty if none yet */
+    if (linklog_range()) {
+        putsn(linklog_range());
+        putc_(' ');
+        putm(linklog_distance_cm(linklog_range()));
+    }
+    nl();
+}
+static void r_rssi_1m(void) { putsn(linklog_rssi_1m()); nl(); }
+static int w_rssi_1m(const char *s) {
+    int v;
+    if (*s == '-') s++;
+    if (!one_num(s, 20, 100, &v)) return 3;
+    linklog_set_rssi_1m(-v);
+    return 0;
+}
+static void r_n10(void) { putn(linklog_n10(), 1); nl(); }
+static int w_n10(const char *s) {
+    int v;
+    if (!one_num(s, 15, 50, &v)) return 3;
+    linklog_set_n10(v);
+    return 0;
+}
+static void r_linkint(void) { putn(linklog_interval(), 1); nl(); }
+static int w_linkint(const char *s) {
+    int v;
+    if (!one_num(s, 0, 600, &v)) return 3;
+    linklog_set_interval(v);
+    return 0;
+}
+#endif
+
 typedef struct {
     const char *path;
     void (*read)(void);
@@ -352,6 +424,14 @@ static const file_t files[] = {
     {"/bt/connected", r_connected, 0},
     {"/bt/peer", r_peer, 0},
     {"/bt/rssi", r_rssi, 0},
+#ifdef MOS_HAVE_LINKLOG
+    {"/bt/distance", r_distance, 0},
+    {"/bt/range", r_range, 0},
+    {"/bt/link.csv", r_link, w_link},
+    {"/bt/link.interval", r_linkint, w_linkint},
+    {"/bt/rssi_1m", r_rssi_1m, w_rssi_1m},
+    {"/bt/path_n10", r_n10, w_n10},
+#endif
 #ifdef MOS_HAVE_BLESCAN
     {"/bt/scan", r_scan, w_scan},
     {"/bt/devices", r_devices, w_devices},

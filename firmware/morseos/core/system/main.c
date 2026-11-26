@@ -49,6 +49,9 @@
 #ifdef MOS_HAVE_BLESCAN
 #include "blescan.h"
 #endif
+#ifdef MOS_HAVE_LINKLOG
+#include "linklog.h"
+#endif
 #ifdef MOS_HAVE_ALARM
 #include "alarms.h"
 #include "alarm.h"
@@ -455,9 +458,15 @@ static void on_connect(u8 e, u8 *p, int n) {
     mos_set_connected(1);
     bls_l2cap_requestConnParamUpdate(24, 40, 4, 400);  // 30-50 ms, latency 4, 4 s timeout
     fast_link = 0;
+#ifdef MOS_HAVE_LINKLOG
+    linklog_connect();
+#endif
 }
 
 static void on_terminate(u8 e, u8 *p, int n) {
+#ifdef MOS_HAVE_LINKLOG
+    linklog_lost(p ? p[0] : 0);   /* reason: 0x08 supervision timeout = out of range */
+#endif
     name_req = 0;
     connected = 0;
     mos_set_connected(0);
@@ -765,6 +774,9 @@ int main() {
             t_rssi = clock_time();
             mos_set_rssi(link_rssi_dbm());
         }
+#ifdef MOS_HAVE_LINKLOG
+        linklog_poll(connected, mos_rssi());
+#endif
 #ifdef MOS_HAVE_ASSETWRITE
         if (erase_pending) do_erase();
         if (commit_pending) do_commit();

@@ -9,5 +9,6 @@
 const u8 *icon_for(const char *label); /* icon of a menu entry by its label, 0 = none */
 const u8 *icon_back(void);             /* back arrow (TORNA / INDIETRO) */
 void icon_draw(int x, int y, const u8 *icon, u16 fg, u16 bg);
+void icon_bell(int x, int y, u16 fg, u16 bg);  /* 10 x 10: alarms are set (watch face) */
 
 #endif

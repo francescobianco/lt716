@@ -165,6 +165,17 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   vibrazione ogni 1,5 s anche con VIBRAZIONE = NO, un tocco la ferma, al massimo 60 s.
   **Solo RAM**: si perdono al riavvio e suonano solo con l'orologio impostato: sono il primo
   motivo per salvare in flash.
+- 🔨 **Campanella delle sveglie** (0.8.6): nel quadrante, fra il link e la batteria, una
+  campanella gialla 10×10 finché c'è almeno una sveglia.
+- 🔨 **STRUMENTI > DISTANZA e log del link** (0.8.6, da provare): niente accelerometro (chip non
+  ancora identificato) né contapassi, quindi la distanza è stimata dall'RSSI medio del link
+  con il modello log-distanza `d = 10^((RSSI_1m − RSSI)/(10 n))`: calibrazione a 1 m tenendo
+  premuto nello strumento (o `/bt/rssi_1m`), `n` in `/bt/path_n10` (25 = 2,5). Indicativa:
+  corpo, muri e orientamento la cambiano anche del doppio. Il dato più solido è `/bt/range`:
+  l'RSSI medio prima di una perdita per timeout (motivo 0x08 = fuori portata; 0x13 = il PC ha
+  chiuso, non conta). Log `/bt/link.csv` (connessioni, perdite col motivo, un campione ogni
+  `/bt/link.interval` s), 32 eventi in RAM. Prova: allontanarsi dal PC finché si stacca, poi
+  rileggere `/bt/range` e `/bt/link.csv`. Lib `linklog`.
 - ✅ **Tutto il quadrante in Ubuntu Condensed Bold** (0.8.5): data e lettere digitate a 20 px,
   nome del dispositivo connesso a 10 px, proporzionali e antialiasati come le cifre (lib
   `aafont`, glifi in RLE da `tools/mkassets.py`, 4,75 KB).

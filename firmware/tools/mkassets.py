@@ -183,6 +183,21 @@ def text_font(size, chars):
     return h, glyphs
 
 
+BELL = 10  # watch face mark: alarms are set
+
+
+def icon_bell():
+    """a small bell, drawn on 40 x 40 (4x) and scaled to 10 x 10"""
+    im = Image.new("L", (BELL * 4, BELL * 4), 0)
+    d = ImageDraw.Draw(im)
+    d.ellipse((17, 0, 23, 6), fill=255)                        # knob
+    d.pieslice((6, 3, 34, 31), 180, 360, fill=255)             # dome
+    d.rectangle((6, 17, 34, 28), fill=255)                     # body
+    d.polygon([(6, 26), (34, 26), (39, 32), (1, 32)], fill=255)  # flared rim
+    d.ellipse((15, 32, 25, 40), fill=255)                      # clapper
+    return im.resize((BELL, BELL), Image.LANCZOS)
+
+
 ICONS = [
     ("INFO", "info", icon_info),
     ("STRUMENTI", "tools", icon_tools),
@@ -227,6 +242,8 @@ def main():
             c = rle(im)
             assert unrle(c, ICON * ICON) == [round(v * 15 / 255) for v in im.getdata()]
             f.write(c_array(f"icon_{name}_bits", c) + "\n")
+        c = rle(icon_bell())
+        f.write(f"#define ICON_BELL_SIZE {BELL}\n" + c_array("icon_bell_bits", c) + "\n")
         f.write("static const struct { const char *label; const u8 *bits; } icon_table[] = {\n")
         for label, name, im in icons:
             if label:
@@ -258,6 +275,7 @@ def main():
             out.paste(im, (i * CELL_W, 0))
         for i, (_, _, im) in enumerate(icons):
             out.paste(im, (CELL_W * 10 + 4 + i * (ICON + 4), 0))
+        out.paste(icon_bell().resize((BELL * 3, BELL * 3), Image.NEAREST), (CELL_W * 10 - 32, 2))
         out.resize((out.width * 4, out.height * 4), Image.NEAREST).save(preview)
 
 
