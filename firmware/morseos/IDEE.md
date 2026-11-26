@@ -171,6 +171,14 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   della seconda band. Quindi la seconda band (LED su PC7, nessun HRS3300) col suo firmware
   originale mostrava un battito **finto**, con il LED che lampeggiava per scena; la prima band
   (HRS3300 su PA4/PC7) ha il percorso vero.
+  **Caccia al fotodiodo sulla seconda band** (2026-11-26; dalla finestrella si vedono il LED e
+  le piazzole SMD di un diodo): misurati **tutti** gli ingressi ADC (PA6, PA7, PB0–PB7) al polso,
+  LED (PC7) spento/acceso, con nessuna resistenza, pull-up 1M/10k, pull-down 100k: nessuno vede
+  la luce. PB5 è tenuto a ~0,58 V da una sorgente a bassa impedenza (~0,7 kΩ, sale a 762 mV
+  con 10k): un partitore o un segnale della carica, non un fotodiodo. PA6 va all'alimentazione
+  già con 1M e lo schermo non reagisce quando lo si porta basso: **PA6 non è il reset del
+  display**, è scollegato (il reset vero è probabilmente PA0, come sulla M6 di rbaron). Il diodo
+  visto non arriva a nessun ingresso analogico: scollegato/finto, o dietro un circuito spento.
 - 🔨 **SALUTE > BATTITO** (0.8.7, da provare sulla band): menu SALUTE con icona del cuore. Lettore
   semplice che mostra i passaggi: LED (C0), AMB (C1), DC (media ~1,6 s), AC (DC − C0), PEN
   (pendenza su 100 ms), SOG (metà dei picchi recenti di PEN), IBI, BPM (media di 4 IBI fra 300 e

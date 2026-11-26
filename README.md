@@ -88,9 +88,9 @@ prima band, 0x8d74 byte).
 |---|---|---|
 | Tasto touch | PC2, attivo alto | uguale |
 | Motore | PA5, attivo alto | uguale |
-| Alimentazione del display | **PA0**, alto = acceso | non c'è |
+| Alimentazione / reset del display | **PA0**, alto = acceso: quasi certamente il RESET attivo basso (come sulla M6 di rbaron) | non c'è |
 | DC del display | **PC6** | PC1 |
-| MOSI / CLK / CS / RST | PC3 / PC5 / PA1 / PA6 | uguale |
+| MOSI / CLK / CS / RST | PC3 / PC5 / PA1 / **PA6 non collegato** (0.8.17: libero, lo schermo non reagisce; il reset è probabilmente PA0) | uguale (RST PA6) |
 | Controller | **GC9107**, RDDID `00 91 07` | ST7735S |
 | Geometria | 80×160, colonna 24, riga 0, MADCTL `0x00` (tasto in basso, ordine RGB), senza INVON | colonna 26, riga 1, MADCTL `0xC8`, INVON |
 | Retroilluminazione | **PA2**, alto = acceso (flottante = debole) | PB3 |
