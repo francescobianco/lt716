@@ -47,6 +47,15 @@ static u32 sample(GPIO_PinTypeDef pin) {
     return ((sum / 8) * 295) >> 8;  /* mV at the pin */
 }
 
+/* mV at any ADC pin (PA7, PB0..PB7), for the sensor diagnostics (/health/adc) */
+u32 battery_adc_mv(u32 pin) {
+    if (!inited) {
+        adc_init();
+        inited = 1;
+    }
+    return sample((GPIO_PinTypeDef)pin);
+}
+
 static int full;            /* charge complete (see battery_full) */
 static u32 t_ref, ref_mv;
 static int ref_set;

@@ -181,6 +181,11 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   Prova 0.8.9: **sblocco fallito**, PA4 resta basso: è tenuto basso dalla scheda, la seconda
   band ha probabilmente una scheda diversa da G/D/V10712 (anche il display è diverso). 0.8.10:
   sulla sola seconda band la scansione prova anche PB0, PB3, PC1 (sulla prima sono del display).
+  Prova 0.8.10: niente su nessuna coppia. **Il LED verde lampeggia durante le scansioni**: è su
+  un pin del microcontrollore (attivo basso), non pilotato da un HRS3300. Nuova ipotesi: sensore
+  **analogico** sulla seconda band, LED su un pin e fotodiodo letto con l'ADC; B5 (pin ADC) basso
+  a riposo = fotodiodo al buio. 0.8.11: `/health/pin` (`A7 0|1|z`) e `/health/adc` (tensione su
+  PA7/PB0..PB7) per trovare il pin del LED e quello del fotodiodo.
 
 - 📌 **Accelerometro**: scansione I2C (sola lettura) su PA3/PC4, interrupt su PA4; identificare il
   chip (SC7A20, STK8321, DA213, QMA7981…), poi X/Y/Z a schermo, **contapassi**, **alza il polso

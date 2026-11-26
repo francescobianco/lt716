@@ -11,5 +11,6 @@ int  battery_level(void);    /* 0..100 from a Li-ion curve, -120 mV while chargi
 int  battery_pct(u32 mv, int charging, int full);  /* the same for any reading */
 int  battery_charging(void); /* charger rail present */
 int  battery_full(void);     /* on the charger and the charge is complete */
+u32  battery_adc_mv(u32 pin); /* mV at an ADC pin (PA7, PB0..PB7): diagnostics */
 
 #endif

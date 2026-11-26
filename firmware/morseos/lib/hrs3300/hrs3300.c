@@ -362,6 +362,67 @@ void hrs_scan_text(void (*put_s)(const char *s)) {
     if (!n_hits) put_s("no device\n");
 }
 
+/* ---- diagnostics: drive pins by hand, find the LED and the photodiode ---- */
+static u8 drv_mode[N_ALLOWED];   /* 0 released, 1 low, 2 high */
+
+int hrs_pin_cmd(const char *s) {
+    int i;
+    u32 p;
+    while (*s == ' ') s++;
+    if (!s[0] || !s[1] || (i = pin_index(s)) < 0 || i == sda_i || i == scl_i) return -1;
+    if (state != HRS_OFF) return -1;
+    s += 2;
+    while (*s == ' ') s++;
+    p = allowed[i];
+    if ((s[0] == '0' || s[0] == '1') && !s[1]) {
+        gpio_set_func(p, AS_GPIO);
+        gpio_setup_up_down_resistor(p, PM_PIN_UP_DOWN_FLOAT);
+        gpio_write(p, s[0] == '1');
+        gpio_set_input_en(p, 0);
+        gpio_set_output_en(p, 1);
+        drv_mode[i] = s[0] == '1' ? 2 : 1;
+        return 0;
+    }
+    if ((s[0] == 'z' || s[0] == 'Z') && !s[1]) {
+        gpio_set_output_en(p, 0);
+        gpio_set_input_en(p, 1);
+        drv_mode[i] = 0;
+        return 0;
+    }
+    return -1;
+}
+
+void hrs_pin_text(void (*put_s)(const char *s)) {
+    int i, any = 0;
+    char t[6];
+    for (i = 0; i < N_ALLOWED; i++)
+        if (drv_mode[i]) {
+            t[0] = allowed_name[i][0];
+            t[1] = allowed_name[i][1];
+            t[2] = ' ';
+            t[3] = drv_mode[i] == 2 ? '1' : '0';
+            t[4] = '\n';
+            t[5] = 0;
+            put_s(t);
+            any = 1;
+        }
+    if (!any) put_s("none\n");
+}
+
+u32 hrs_adc_pin(const char *n) {
+    static const u32 adc_pins[] = {GPIO_PA7, GPIO_PB0, GPIO_PB1, GPIO_PB2, GPIO_PB3, GPIO_PB4,
+                                   GPIO_PB5, GPIO_PB6, GPIO_PB7};
+    static const char *const adc_names[] = {"A7", "B0", "B1", "B2", "B3", "B4", "B5", "B6", "B7"};
+    int i;
+    char c0 = n[0] >= 'a' ? n[0] - 32 : n[0];
+    for (i = 0; i < 9; i++)
+        if (adc_names[i][0] == c0 && adc_names[i][1] == n[1] && !n[2]) {
+            if (adc_pins[i] == GPIO_PB3 && !(lcd_board && lcd_board->band == 2)) return 0;
+            return adc_pins[i];
+        }
+    return 0;
+}
+
 void hrs_pins_text(char *out) {
     const char *a = allowed_name[sda_i], *b = allowed_name[scl_i];
     out[0] = a[0]; out[1] = a[1]; out[2] = ' '; out[3] = b[0]; out[4] = b[1]; out[5] = 0;

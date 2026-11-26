@@ -37,6 +37,7 @@ extern u32 stack_free(void);
  * A reader prints the whole file every time; only the bytes in [win_lo, win_lo + WIN) are
  * kept. So no buffer for the file, no size limit, a few bytes of RAM. */
 static u32 pos, win_lo;
+static u32 adc_last;             /* /health/adc: the measure, taken while sending packet 0 */
 static u8 win[WIN];
 
 static void putc_(char c) {
@@ -410,6 +411,26 @@ static void r_hrpower(void) {
 }
 static int w_hrpower(const char *s) { return hrs_set_power(s) ? 3 : 0; }
 static void r_hrscan(void) { hrs_scan_text(puts_); }
+static void r_hrpin(void) { hrs_pin_text(puts_); }
+static int w_hrpin(const char *s) { return hrs_pin_cmd(s) ? 3 : 0; }
+
+/* /health/adc: write an ADC pin name (PA7, PB0..PB7), read its voltage now: "B5 123 mV" */
+static char adc_name[3] = "B5";
+static void r_adc(void) {
+    u32 p = hrs_adc_pin(adc_name);
+    puts_(adc_name);
+    putc_(' ');
+    if (p && !win_lo) adc_last = battery_adc_mv(p);   /* measured once per read (packet 0) */
+    putn(adc_last, 1);
+    puts_(" mV\n");
+}
+static int w_adc(const char *s) {
+    if (!hrs_adc_pin(s)) return 3;
+    adc_name[0] = s[0] >= 'a' ? s[0] - 32 : s[0];
+    adc_name[1] = s[1];
+    return 0;
+}
+
 static int w_hrscan(const char *s) {
     if (!(s[0] == '1' && !s[1])) return 3;
     hrs_scan();
@@ -459,6 +480,8 @@ static const file_t files[] = {
     {"/health/hr_state", r_hrstate, 0},
     {"/health/hr_power", r_hrpower, w_hrpower},
     {"/health/hr_scan", r_hrscan, w_hrscan},
+    {"/health/pin", r_hrpin, w_hrpin},
+    {"/health/adc", r_adc, w_adc},
 #endif
     {"/morse/speed", r_speed, w_speed},
     {"/morse/dot_ms", r_threshold, 0},
