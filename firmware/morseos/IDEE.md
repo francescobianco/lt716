@@ -212,6 +212,13 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   chiuso, non conta). Log `/bt/link.csv` (connessioni, perdite col motivo, un campione ogni
   `/bt/link.interval` s), 32 eventi in RAM. Prova: allontanarsi dal PC finché si stacca, poi
   rileggere `/bt/range` e `/bt/link.csv`. Lib `linklog`.
+- 🔨 **STRUMENTI > LUCE** (0.8.12, da provare): schermo bianco con retroilluminazione al
+  massimo e LED verde (PC7, solo seconda band); tap: acceso → SOS in Morse (unità 200 ms,
+  schermo e LED insieme) → spento → acceso; pressione lunga: esce. Lo schermo non si spegne
+  mentre è aperta. Lib `greenled`: il LED si spegne da solo 300 ms dopo l'ultima richiesta.
+- 📌 **Accelerometro** (2026-11-26): non ancora trovato. Nel firmware originale le funzioni I2C
+  in bit-bang parlano solo con l'HRS3300 (`0x88`); l'I2C hardware è assegnato a PA4/PA3 ma non
+  ho trovato chi lo usa. Il contapassi è un algoritmo sul microcontrollore sopra i dati grezzi.
 - ✅ **Tutto il quadrante in Ubuntu Condensed Bold** (0.8.5): data e lettere digitate a 20 px,
   nome del dispositivo connesso a 10 px, proporzionali e antialiasati come le cifre (lib
   `aafont`, glifi in RLE da `tools/mkassets.py`, 4,75 KB).
