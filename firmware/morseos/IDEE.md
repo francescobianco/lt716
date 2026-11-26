@@ -178,6 +178,9 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   **nessun pin di alimentazione**; PA4 è **condiviso** con l'I2C hardware (`AS_I2C_MSD` su PA4,
   `AS_I2C_MCK` su PA3), quasi certamente l'accelerometro. 0.8.9: sblocco del bus (fino a 9
   impulsi di clock su PC7, poi PA3) se SDA è basso, esito in `/health/hr_scan`.
+  Prova 0.8.9: **sblocco fallito**, PA4 resta basso: è tenuto basso dalla scheda, la seconda
+  band ha probabilmente una scheda diversa da G/D/V10712 (anche il display è diverso). 0.8.10:
+  sulla sola seconda band la scansione prova anche PB0, PB3, PC1 (sulla prima sono del display).
 
 - 📌 **Accelerometro**: scansione I2C (sola lettura) su PA3/PC4, interrupt su PA4; identificare il
   chip (SC7A20, STK8321, DA213, QMA7981…), poi X/Y/Z a schermo, **contapassi**, **alza il polso

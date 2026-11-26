@@ -2,16 +2,23 @@
 #include "hrs3300.h"
 #include "drivers/5316/clock.h"
 #include "drivers/5316/gpio.h"
+#include "st7735.h"
 
 #define ADDR    0x44
 #define HALF_US 10
 
-/* pins that may be tried: not the display, motor, touch key, battery ADC or SPI ones */
+/* pins that may be tried: not the display, motor, touch key, battery ADC or SPI ones. The
+ * last three (0.8.10) are the first band's display DC (PC1) and backlight (PB3) and PB0:
+ * unused on the second band, so tried only there (lcd_board, found at boot) */
 static const u32 allowed[] = {GPIO_PA3, GPIO_PA4, GPIO_PA7, GPIO_PB4, GPIO_PB5, GPIO_PB6,
-                              GPIO_PB7, GPIO_PC0, GPIO_PC4, GPIO_PC7};
+                              GPIO_PB7, GPIO_PC0, GPIO_PC4, GPIO_PC7,
+                              GPIO_PB0, GPIO_PB3, GPIO_PC1};
 static const char *const allowed_name[] = {"A3", "A4", "A7", "B4", "B5", "B6", "B7", "C0",
-                                           "C4", "C7"};
-#define N_ALLOWED 10
+                                           "C4", "C7", "B0", "B3", "C1"};
+#define N_ALLOWED 13
+#define N_COMMON  10
+
+static int pin_ok(int i) { return i < N_COMMON || (lcd_board && lcd_board->band == 2); }
 
 static u8 sda_i = 1, scl_i = 9;  /* A4, C7 */
 static s8 pwr_i = -1;            /* power pin, active low; -1 none */
@@ -276,17 +283,17 @@ void hrs_scan(void) {
     levels = 0;
     n_hits = 0;
     for (i = 0; i < N_ALLOWED; i++) {
-        if (i == pwr_i) continue;
+        if (i == pwr_i || !pin_ok(i)) continue;
         setup(allowed[i]);
     }
     sleep_us(500);
     unstuck_by = -2;
     if (!gpio_read(allowed[sda_i])) recover_sda(sda_i);   /* the sensor's SDA held low */
     for (i = 0; i < N_ALLOWED; i++)
-        if (i != pwr_i) setup(allowed[i]);
+        if (i != pwr_i && pin_ok(i)) setup(allowed[i]);
     sleep_us(200);
     for (i = 0; i < N_ALLOWED; i++)
-        if (i != pwr_i && gpio_read(allowed[i])) levels |= 1 << i;
+        if (i != pwr_i && pin_ok(i) && gpio_read(allowed[i])) levels |= 1 << i;
     for (i = 0; i < N_ALLOWED; i++)
         for (j = 0; j < N_ALLOWED; j++) {
             if (i == j || !(levels >> i & 1) || !(levels >> j & 1)) continue;
@@ -302,7 +309,7 @@ void hrs_scan(void) {
             stop();
         }
     for (i = 0; i < N_ALLOWED; i++)
-        if (i != pwr_i) restore(allowed[i]);
+        if (i != pwr_i && pin_ok(i)) restore(allowed[i]);
     power(0);
     levels |= 0x8000;
 }
@@ -319,7 +326,7 @@ void hrs_scan_text(void (*put_s)(const char *s)) {
     put_s(t);
     put_s("\nidle");
     for (i = 0; i < N_ALLOWED; i++) {
-        if (i == pwr_i) continue;
+        if (i == pwr_i || !pin_ok(i)) continue;
         t[0] = ' ';
         t[1] = allowed_name[i][0];
         t[2] = allowed_name[i][1];
@@ -364,7 +371,7 @@ static int pin_index(const char *s) {
     int i;
     char c0 = s[0] >= 'a' ? s[0] - 32 : s[0];
     for (i = 0; i < N_ALLOWED; i++)
-        if (allowed_name[i][0] == c0 && allowed_name[i][1] == s[1]) return i;
+        if (pin_ok(i) && allowed_name[i][0] == c0 && allowed_name[i][1] == s[1]) return i;
     return -1;
 }
 
