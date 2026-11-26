@@ -234,6 +234,9 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   e avvisa la libreria (`0x158f4`), parametri `4, 4, 30, 3`. Sulla seconda band PA4 "tenuto
   basso" = interruttore chiuso a massa a riposo. 0.8.13: `/health/motion` (livello e fronti di
   PA4, letto dal ciclo principale) per vederlo reagire; poi il contapassi sopra.
+  **Confermato sulla seconda band** (0.8.13): a riposo livello 0 e 0 fronti; ~10 s di scosse =
+  976 fronti (il contatto rimbalza, ~100 fronti/s). Il contapassi dovrà raggruppare i rimbalzi in
+  colpi e contare solo quelli a cadenza di camminata, con l'interrupt anche a CPU addormentata.
 - ✅ **Tutto il quadrante in Ubuntu Condensed Bold** (0.8.5): data e lettere digitate a 20 px,
   nome del dispositivo connesso a 10 px, proporzionali e antialiasati come le cifre (lib
   `aafont`, glifi in RLE da `tools/mkassets.py`, 4,75 KB).
