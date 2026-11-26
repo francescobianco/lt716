@@ -428,7 +428,10 @@ static void r_adc(void) {
     u32 p = hrs_adc_pin(adc_name);
     puts_(adc_name);
     putc_(' ');
-    if (p && !win_lo) adc_last = battery_adc_mv(p);   /* measured once per read (packet 0) */
+    if (p && !win_lo) {                               /* measured once per read (packet 0) */
+        hrs_adc_pull_apply(p);
+        adc_last = battery_adc_mv(p);
+    }
     putn(adc_last, 1);
     puts_(" mV\n");
 }
@@ -438,6 +441,9 @@ static int w_adc(const char *s) {
     adc_name[1] = s[1];
     return 0;
 }
+
+static void r_adcpull(void) { puts_(hrs_adc_pull_name()); nl(); }
+static int w_adcpull(const char *s) { return hrs_adc_pull_set(s) ? 3 : 0; }
 
 static int w_hrscan(const char *s) {
     if (!(s[0] == '1' && !s[1])) return 3;
@@ -528,6 +534,7 @@ static const file_t files[] = {
     {"/health/hr_scan", r_hrscan, w_hrscan},
     {"/health/pin", r_hrpin, w_hrpin},
     {"/health/adc", r_adc, w_adc},
+    {"/health/adc_pull", r_adcpull, w_adcpull},
 #endif
 #ifdef MOS_HAVE_HWSCAN
     {"/hw/scan", r_hwscan, w_hwscan},

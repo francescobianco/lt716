@@ -423,6 +423,34 @@ u32 hrs_adc_pin(const char *n) {
     return 0;
 }
 
+static s8 adc_pull = -1;       /* -1 leave, else PM_PIN_* */
+static const char *const pull_names[] = {"f", "u1m", "u10k", "d100k"};
+
+int hrs_adc_pull_set(const char *s) {
+    int i;
+    if (s[0] == '-' && !s[1]) {
+        adc_pull = -1;
+        return 0;
+    }
+    for (i = 0; i < 4; i++) {
+        const char *a = pull_names[i], *b = s;
+        while (*a && *a == *b) a++, b++;
+        if (!*a && !*b) {
+            adc_pull = i;       /* PM_PIN_UP_DOWN_FLOAT 0, PULLUP_1M 1, PULLUP_10K 2, PULLDOWN_100K 3 */
+            return 0;
+        }
+    }
+    return -1;
+}
+
+const char *hrs_adc_pull_name(void) { return adc_pull < 0 ? "-" : pull_names[(int)adc_pull]; }
+
+void hrs_adc_pull_apply(u32 pin) {
+    if (adc_pull < 0) return;
+    gpio_setup_up_down_resistor(pin, adc_pull);
+    sleep_us(2000);             /* let the node settle (a photodiode node is slow) */
+}
+
 void hrs_pins_text(char *out) {
     const char *a = allowed_name[sda_i], *b = allowed_name[scl_i];
     out[0] = a[0]; out[1] = a[1]; out[2] = ' '; out[3] = b[0]; out[4] = b[1]; out[5] = 0;
