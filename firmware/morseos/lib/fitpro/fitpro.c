@@ -52,9 +52,10 @@ void fitpro_poll(void) {
         if (cb->alarms_set) cb->alarms_set(data, dlen);
         ok = 1;
     } else if (group == 0x15 && cmd == 0x0D && cb->steps) {   /* today's totals */
-        /* CD 00 0F 15 01 0C 00 0C <00 00> <steps u32> <distance m u32> <kcal u16>, as the stock
-         * firmware (0x2658 in V10712); distance 70 cm and 0.04 kcal per step, estimates */
-        u8 r[20] = {0xCD, 0x00, 0x0F, 0x15, 0x01, 0x0C, 0x00, 0x0C};
+        /* CD 00 11 15 01 0C 00 0C <00 00> <steps u32> <distance m u32> <kcal u16> (20 bytes, the
+         * length field is total - 3), as the stock firmware (0x2658 in V10712); distance 70 cm
+         * and 0.04 kcal per step, estimates */
+        u8 r[20] = {0xCD, 0x00, 0x11, 0x15, 0x01, 0x0C, 0x00, 0x0C};
         u32 st = cb->steps(), m = st * 70 / 100, kc = st * 4 / 100;
         r[10] = st >> 24; r[11] = st >> 16; r[12] = st >> 8; r[13] = st;
         r[14] = m >> 24; r[15] = m >> 16; r[16] = m >> 8; r[17] = m;
