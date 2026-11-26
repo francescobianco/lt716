@@ -23,6 +23,9 @@
 #ifdef MOS_HAVE_HRS3300
 #include "hrs3300.h"
 #endif
+#ifdef MOS_HAVE_HWSCAN
+#include "hwscan.h"
+#endif
 
 #define WIN       16    /* data bytes per notification */
 #define WBUF      40    /* one line written: the longest is an alarm (33) */
@@ -37,7 +40,9 @@ extern u32 stack_free(void);
  * A reader prints the whole file every time; only the bytes in [win_lo, win_lo + WIN) are
  * kept. So no buffer for the file, no size limit, a few bytes of RAM. */
 static u32 pos, win_lo;
+#ifdef MOS_HAVE_HRS3300
 static u32 adc_last;             /* /health/adc: the measure, taken while sending packet 0 */
+#endif
 static u8 win[WIN];
 
 static void putc_(char c) {
@@ -448,6 +453,16 @@ static void r_hrstate(void) {   /* off, on, lines-low, no-answer, id-XX */
 }
 #endif
 
+#ifdef MOS_HAVE_HWSCAN
+/* /hw/scan: write 1 to start the hardware discovery, read the result (see hwscan.h) */
+static void r_hwscan(void) { hwscan_text(puts_); }
+static int w_hwscan(const char *s) {
+    if (!(s[0] == '1' && !s[1])) return 3;
+    hwscan_start();
+    return 0;
+}
+#endif
+
 typedef struct {
     const char *path;
     void (*read)(void);
@@ -482,6 +497,9 @@ static const file_t files[] = {
     {"/health/hr_scan", r_hrscan, w_hrscan},
     {"/health/pin", r_hrpin, w_hrpin},
     {"/health/adc", r_adc, w_adc},
+#endif
+#ifdef MOS_HAVE_HWSCAN
+    {"/hw/scan", r_hwscan, w_hwscan},
 #endif
     {"/morse/speed", r_speed, w_speed},
     {"/morse/dot_ms", r_threshold, 0},

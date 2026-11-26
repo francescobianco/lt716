@@ -14,15 +14,16 @@ if [[ ! -d $elab ]]; then
 fi
 git -C "$elab" checkout -q "$commit"
 mkdir -p "$elab/examples/lt716_$name"   # mount point (the tree is mounted read-only)
-# bundle-based projects: resolve bundle.ini into _gen/ (sources, defines, app table)
-if [[ -f $here/$name/bundle.ini ]]; then
-  python3 -I "$here/tools/bundle.py" "$here/$name" "$here/$name/bundle.ini" "$here/$name/_gen"
+# bundle-based projects: resolve bundle.ini (or $BUNDLE, e.g. diag.ini) into _gen/
+bundle=${BUNDLE:-bundle.ini}
+if [[ -f $here/$name/$bundle ]]; then
+  python3 -I "$here/tools/bundle.py" "$here/$name" "$here/$name/$bundle" "$here/$name/_gen"
 fi
 docker run --rm --user "$(id -u):$(id -g)" \
   -v "$elab":/src:ro -v "$here/$name":/src/examples/lt716_$name \
   -w /src/examples/lt716_$name "$image" make "${@:2}"
 target=$(sed -n 's/^TARGET *= *//p' "$here/$name/Makefile")
-if [[ -f $here/$name/bundle.ini ]]; then
+if [[ -f $here/$name/$bundle ]]; then
   python3 -I "$here/tools/bundle.py" --sizes "$here/$name" "$here/$name/_build"
 fi
 python3 -I "$here/telink_fw.py" "$here/$name/_build/$target.bin" "$here/$name/_build/$target.ota.bin"

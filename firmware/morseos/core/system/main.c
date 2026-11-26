@@ -58,6 +58,9 @@
 #ifdef MOS_HAVE_GREENLED
 #include "greenled.h"
 #endif
+#ifdef MOS_HAVE_HWSCAN
+#include "hwscan.h"
+#endif
 #ifdef MOS_HAVE_ALARM
 #include "alarms.h"
 #include "alarm.h"
@@ -665,6 +668,9 @@ int main() {
 #endif
         mos_poll(emergency_stage == 0 ? t : 0);
         files_poll();
+#ifdef MOS_HAVE_HWSCAN
+        hwscan_poll();                 /* diag bundle: one pin pair per pass */
+#endif
 #ifdef MOS_HAVE_GREENLED
         greenled_poll();               /* LED off 300 ms after LUCE stops asking */
 #endif
@@ -736,6 +742,9 @@ int main() {
                        sg_healthy;   /* awake until the boot is healthy: SG_HEALTHY_MS is real time */
 #ifdef MOS_HAVE_BLESCAN
             want = want && !blescan_active();   /* as in the SDK scan sample: no suspend */
+#endif
+#ifdef MOS_HAVE_HWSCAN
+            want = want && !hwscan_busy();
 #endif
             if (want != cur_suspend) {
                 cur_suspend = want;

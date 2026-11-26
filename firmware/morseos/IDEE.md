@@ -216,6 +216,16 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   massimo e LED verde (PC7, solo seconda band); tap: acceso → SOS in Morse (unità 200 ms,
   schermo e LED insieme) → spento → acceso; pressione lunga: esce. Lo schermo non si spegne
   mentre è aperta. Lib `greenled`: il LED si spegne da solo 300 ms dopo l'ultima richiesta.
+- 🔨 **Microfirmware di scoperta "diag"** (`diag.ini`, `BUNDLE=diag.ini firmware/build.sh
+  morseos -B BAND=2`): il nucleo sicuro di MorseOS più `lib/hwscan`: profilo di ogni pin
+  (pull-down/pull-up: flottante, tenuto alto, tenuto basso) e I2C completo (indirizzi
+  0x08–0x77 su ogni coppia di pin che può stare alta, registri 0x00/0x01/0x0F di chi risponde),
+  una coppia per giro del ciclo. `echo 1 > ~/band/hw/scan`, poi `cat`.
+- **Ricerca (2026-11-26)**: il package ET24 della LT715 (e-lab) ha solo 16 GPIO, senza PA0, PA2,
+  PA7, PB0, PB6, PB7, PC0, PC6: la seconda band (PA0, PA2, PC6 per il display) ha un package
+  più grande, come la band **M6** di rbaron (display RS su PC6, retroilluminazione PA2), il cui
+  sensore del battito è "most likely fake". Ipotesi: sulla seconda band il "battito" è solo il
+  LED su PC7. davidgiven/telinkdebugger (SWS con un Pico) è provato sulle LT716.
 - 📌 **Accelerometro** (2026-11-26): non ancora trovato. Nel firmware originale le funzioni I2C
   in bit-bang parlano solo con l'HRS3300 (`0x88`); l'I2C hardware è assegnato a PA4/PA3 ma non
   ho trovato chi lo usa. Il contapassi è un algoritmo sul microcontrollore sopra i dati grezzi.

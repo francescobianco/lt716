@@ -19,7 +19,9 @@
 #include "drivers/5316/clock.h"
 
 static const char *const wday_it[7] = {"DOM", "LUN", "MAR", "MER", "GIO", "VEN", "SAB"};
+#ifdef MOS_HAVE_ALARMS
 static int last_alarms = -1;  /* alarms set when the bell was drawn */
+#endif
 
 /* top bar, between the link and the battery: a small bell while alarms are set */
 static void draw_bell(void) {
