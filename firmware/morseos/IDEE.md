@@ -157,6 +157,20 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   (scansione in advertising e in connessione), disconnetti, "connetti a…" come periferica:
   white list + advertising diretto verso il dispositivo scelto (la libreria non ha il ruolo
   master). Libreria `ble_scan`.
+- ✅ **Come il firmware originale "misura" il battito** (2026-11-26, V10712, risalendo da
+  `15 0E`): la macchina a stati della misura `0x92a6` sceglie una durata a caso (`timer % 5 +
+  20` s) e poi, secondo un flag (campo 28 della struttura a `0x80b014`):
+  - **flag 0, sensore presente**: il compito periodico `0x4ee0` legge C0 e C1 dall'HRS3300 e li
+    passa alla libreria `0x18344` (come `Hrs3300_alg_send_data`); ogni 24 campioni chiede il
+    risultato (`0x17f68`), con stato 5 fa la media di 5 battiti → campo 26 = **battito vero**;
+    pressione da un'altra libreria (`0x1892c`);
+  - **flag 1, sensore assente**: **battito = timer di sistema % 15 + 70** (70–84), pressione
+    `% 28 + 60` / `% 45 + 90`, SpO2 `% 5 + 90`: valori inventati.
+  Il flag lo accende l'init del sensore (`0x4e24`) quando l'ID `0x21` non risponde in 5 letture.
+  Nell'immagine D (V17899) lo stesso flag fa anche **lampeggiare PC7** (`0x4b98`): è il LED verde
+  della seconda band. Quindi la seconda band (LED su PC7, nessun HRS3300) col suo firmware
+  originale mostrava un battito **finto**, con il LED che lampeggiava per scena; la prima band
+  (HRS3300 su PA4/PC7) ha il percorso vero.
 - 🔨 **SALUTE > BATTITO** (0.8.7, da provare sulla band): menu SALUTE con icona del cuore. Lettore
   semplice che mostra i passaggi: LED (C0), AMB (C1), DC (media ~1,6 s), AC (DC − C0), PEN
   (pendenza su 100 ms), SOG (metà dei picchi recenti di PEN), IBI, BPM (media di 4 IBI fra 300 e
