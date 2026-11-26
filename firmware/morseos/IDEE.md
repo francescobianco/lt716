@@ -186,6 +186,10 @@ Raccolta delle idee man mano che emergono. Stato: ✅ fatto, 🔨 in corso, 📌
   **analogico** sulla seconda band, LED su un pin e fotodiodo letto con l'ADC; B5 (pin ADC) basso
   a riposo = fotodiodo al buio. 0.8.11: `/health/pin` (`A7 0|1|z`) e `/health/adc` (tensione su
   PA7/PB0..PB7) per trovare il pin del LED e quello del fotodiodo.
+  **Trovato (2026-11-26): il LED verde della seconda band è su PC7, attivo basso** (lampeggi
+  contati a occhio: 5 lampeggi = PC7, confermato). Sulla prima band PC7 è il clock I2C
+  dell'HRS3300: le due schede sono diverse. B5 (578 mV a riposo) non cambia col LED acceso al
+  polso. Prossimo: LED acceso al polso, misurare tutti i pin ADC per trovare il fotodiodo.
 
 - 📌 **Accelerometro**: scansione I2C (sola lettura) su PA3/PC4, interrupt su PA4; identificare il
   chip (SC7A20, STK8321, DA213, QMA7981…), poi X/Y/Z a schermo, **contapassi**, **alza il polso
