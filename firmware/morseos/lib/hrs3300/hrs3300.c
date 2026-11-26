@@ -411,13 +411,17 @@ void hrs_pin_text(void (*put_s)(const char *s)) {
 
 u32 hrs_adc_pin(const char *n) {
     static const u32 adc_pins[] = {GPIO_PA7, GPIO_PB0, GPIO_PB1, GPIO_PB2, GPIO_PB3, GPIO_PB4,
-                                   GPIO_PB5, GPIO_PB6, GPIO_PB7};
-    static const char *const adc_names[] = {"A7", "B0", "B1", "B2", "B3", "B4", "B5", "B6", "B7"};
-    int i;
+                                   GPIO_PB5, GPIO_PB6, GPIO_PB7, GPIO_PA6};
+    static const char *const adc_names[] = {"A7", "B0", "B1", "B2", "B3", "B4", "B5", "B6", "B7",
+                                            "A6"};
+    int i, band2 = lcd_board && lcd_board->band == 2;
     char c0 = n[0] >= 'a' ? n[0] - 32 : n[0];
-    for (i = 0; i < 9; i++)
+    for (i = 0; i < 10; i++)
         if (adc_names[i][0] == c0 && adc_names[i][1] == n[1] && !n[2]) {
-            if (adc_pins[i] == GPIO_PB3 && !(lcd_board && lcd_board->band == 2)) return 0;
+            /* PB3: first band's backlight. PA6 (0.8.17): the display reset we assumed on the
+             * second band, maybe free (rbaron's M6 resets on PA0): second band only, and put
+             * back as an output high after every measure (hrs_adc_restore) */
+            if ((adc_pins[i] == GPIO_PB3 || adc_pins[i] == GPIO_PA6) && !band2) return 0;
             return adc_pins[i];
         }
     return 0;
@@ -444,6 +448,15 @@ int hrs_adc_pull_set(const char *s) {
 }
 
 const char *hrs_adc_pull_name(void) { return adc_pull < 0 ? "-" : pull_names[(int)adc_pull]; }
+
+void hrs_adc_restore(u32 pin) {   /* PA6: back to what the display driver left, output high */
+    if (pin != GPIO_PA6) return;
+    gpio_setup_up_down_resistor(pin, PM_PIN_UP_DOWN_FLOAT);
+    gpio_set_func(pin, AS_GPIO);
+    gpio_write(pin, 1);
+    gpio_set_input_en(pin, 0);
+    gpio_set_output_en(pin, 1);
+}
 
 void hrs_adc_pull_apply(u32 pin) {
     if (adc_pull < 0) return;

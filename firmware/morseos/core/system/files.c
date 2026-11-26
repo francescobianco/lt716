@@ -431,6 +431,7 @@ static void r_adc(void) {
     if (p && !win_lo) {                               /* measured once per read (packet 0) */
         hrs_adc_pull_apply(p);
         adc_last = battery_adc_mv(p);
+        hrs_adc_restore(p);
     }
     putn(adc_last, 1);
     puts_(" mV\n");

@@ -51,6 +51,7 @@ u32  hrs_adc_pin(const char *name);
 int  hrs_adc_pull_set(const char *s);   /* 0 ok, -1 bad */
 const char *hrs_adc_pull_name(void);
 void hrs_adc_pull_apply(u32 pin);
+void hrs_adc_restore(u32 pin);          /* after the measure: PA6 back to output high */
 /* pins as "A4 C7": the names of the allowed pins */
 void hrs_pins_text(char *out);
 int  hrs_set_pins(const char *s);  /* 0 ok, -1 bad or not allowed */
